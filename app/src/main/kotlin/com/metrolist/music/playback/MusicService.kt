@@ -2617,6 +2617,7 @@ class MusicService :
         initialBufferRecoveryAttemptedMediaId = null
         retryJob?.cancel()
         retryJob = null
+        resumeAfterSkipFromIdle(mediaItem, reason)
         updateInitialBufferRecovery(player.playbackState)
 
         previousEpisodeId?.let { episodeId ->
@@ -2675,6 +2676,31 @@ class MusicService :
         if (cachedPersistentQueue) {
             saveQueueToDisk()
         }
+    }
+
+    /**
+     * A skip from Bluetooth, a headset or intercom, the notification, the lock screen or the widget
+     * goes straight to the player, unlike the in-app button ([PlayerConnection.seekToNext]), which
+     * prepares an idle player itself. After a playback error the player is idle, and the retry that
+     * would have prepared it was just cancelled above, so the new song stayed silent until something
+     * else prepared it. Prepare it here, and play it if the error had stopped the music.
+     */
+    private fun resumeAfterSkipFromIdle(
+        mediaItem: MediaItem?,
+        reason: Int,
+    ) {
+        if (mediaItem == null ||
+            reason != Player.MEDIA_ITEM_TRANSITION_REASON_SEEK ||
+            player.playbackState != STATE_IDLE
+        ) {
+            return
+        }
+        val afterError = player.playerError != null
+        Timber.tag(TAG).d("Skipped to ${mediaItem.mediaId} while idle (afterError=$afterError), preparing it")
+        waitingForNetworkConnection.value = false
+        pausedDueToNetworkError = false
+        player.prepare()
+        if (afterError) player.playWhenReady = true
     }
 
     override fun onPlaybackStateChanged(
@@ -4798,7 +4824,8 @@ class MusicService :
         /** Refresh cached stream URLs with less TTL remaining than this. */
         private const val EXPIRING_SOON_REFRESH_MS = 30_000L
 
-        private const val INITIAL_BUFFER_RECOVERY_DELAY_MS = 15_000L
+        // How long a new song may sit silent at its start before its stream is fetched again.
+        private const val INITIAL_BUFFER_RECOVERY_DELAY_MS = 8_000L
         private const val INITIAL_BUFFER_RECOVERY_POSITION_MS = 5_000L
         private const val TAG = "MusicService"
 
