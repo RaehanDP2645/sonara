@@ -148,7 +148,7 @@ fun PlayerMenu(
                     ),
                     NewAction(
                         icon = { MenuIcon(R.drawable.playlist_add) },
-                        text = stringResource(R.string.add_to_playlist),
+                        text = stringResource(R.string.er_card_playlist),
                         onClick = { showChoosePlaylistDialog = true },
                     ),
                     NewAction(

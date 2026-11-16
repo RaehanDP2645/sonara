@@ -12,7 +12,6 @@ package com.metrolist.music.tv
 
 import android.os.Build
 import android.provider.Settings
-import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -38,8 +37,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
@@ -47,11 +44,8 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.google.zxing.BarcodeFormat
-import com.google.zxing.EncodeHintType
-import com.google.zxing.common.BitMatrix
-import com.google.zxing.qrcode.QRCodeWriter
 import com.metrolist.music.R
+import com.metrolist.music.tvlink.SonaraQrCode
 import com.metrolist.music.tvlink.TvAccount
 import com.metrolist.music.tvlink.TvLink
 import com.metrolist.music.ui.screens.LoginSheet
@@ -137,31 +131,9 @@ fun TvSignIn() {
                     .padding(22.dp),
                 contentAlignment = Alignment.Center,
             ) {
-                session?.let { QrCode(TvLink.linkFor(it), Modifier.fillMaxSize()) }
+                session?.let { SonaraQrCode(TvLink.linkFor(it), painterResource(R.drawable.logo_mark), Modifier.fillMaxSize()) }
             }
         }
     }
     if (google) LoginSheet(onClose = { google = false })
-}
-
-/** [text] as a QR code, dark modules on the white card. */
-@Composable
-private fun QrCode(
-    text: String,
-    modifier: Modifier = Modifier,
-) {
-    val matrix: BitMatrix =
-        remember(text) {
-            QRCodeWriter().encode(text, BarcodeFormat.QR_CODE, 0, 0, mapOf(EncodeHintType.MARGIN to 0))
-        }
-    Canvas(modifier) {
-        val cell = size.minDimension / matrix.width
-        for (y in 0 until matrix.height) {
-            for (x in 0 until matrix.width) {
-                if (matrix[x, y]) {
-                    drawRect(Color(0xFF0B1414), topLeft = Offset(x * cell, y * cell), size = Size(cell + 0.5f, cell + 0.5f))
-                }
-            }
-        }
-    }
 }

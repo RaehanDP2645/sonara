@@ -526,7 +526,7 @@ fun SongMenu(
                                     tint = MaterialTheme.colorScheme.onSurfaceVariant,
                                 )
                             },
-                            text = stringResource(R.string.add_to_playlist),
+                            text = stringResource(R.string.er_card_playlist),
                             onClick = { showChoosePlaylistDialog = true },
                         ),
                         NewAction(

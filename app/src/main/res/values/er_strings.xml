@@ -219,7 +219,11 @@
     <string name="er_update_required_title">Update Sonara to keep using it</string>
     <string name="er_update_required">This version no longer works. Install Sonara %1$s to go on.</string>
     <string name="er_update_quit">Close Sonara</string>
+    <!-- The "Add to playlist" card in menus: one line (the card's + icon says the rest). -->
+    <string name="er_card_playlist">Playlist</string>
     <string name="er_tv_sign_in">Sign in on a TV</string>
+    <string name="er_tv_camera">Allow the camera in Sonara\'s app settings to scan the code</string>
+    <string name="er_tv_aim">Point at the code on your TV</string>
     <string name="er_tv_steps">Open Sonara TV, then scan the code on the screen or type its 6 digits.</string>
     <string name="er_tv_scan">Scan the code</string>
     <string name="er_tv_code">6-digit code</string>

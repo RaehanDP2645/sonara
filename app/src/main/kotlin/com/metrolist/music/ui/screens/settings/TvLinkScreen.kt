@@ -9,7 +9,6 @@
 
 package com.metrolist.music.ui.screens.settings
 
-import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
@@ -46,11 +45,10 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavController
-import com.journeyapps.barcodescanner.ScanContract
-import com.journeyapps.barcodescanner.ScanOptions
 import com.metrolist.music.LocalPlayerAwareWindowInsets
 import com.metrolist.music.R
 import com.metrolist.music.tvlink.TvAccount
+import com.metrolist.music.tvlink.QrScanner
 import com.metrolist.music.tvlink.TvLink
 import com.metrolist.music.ui.theme.Spacing
 import com.metrolist.music.ui.theme.backdropTopBarColors
@@ -109,11 +107,7 @@ fun TvLinkScreen(
         }
     }
 
-    val scanner =
-        rememberLauncherForActivityResult(ScanContract()) { result ->
-            val found = result.contents?.let(TvLink::sessionFrom)
-            if (found != null) find(session = found) else if (result.contents != null) state = LinkState.Failed(R.string.er_tv_not_sonara)
-        }
+    var scanning by remember { mutableStateOf(false) }
 
     LaunchedEffect(session) { session?.let { find(session = it) } }
 
@@ -152,18 +146,7 @@ fun TvLinkScreen(
                 else -> {
                     Text(stringResource(R.string.er_tv_steps), style = MaterialTheme.typography.bodyLarge, textAlign = TextAlign.Center, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     (now as? LinkState.Failed)?.let { Text(stringResource(it.message), color = MaterialTheme.colorScheme.error, textAlign = TextAlign.Center) }
-                    Button(
-                        onClick = {
-                            scanner.launch(
-                                ScanOptions()
-                                    .setDesiredBarcodeFormats(ScanOptions.QR_CODE)
-                                    .setBeepEnabled(false)
-                                    .setOrientationLocked(true)
-                                    .setPrompt(""),
-                            )
-                        },
-                        modifier = Modifier.fillMaxWidth(),
-                    ) { Text(stringResource(R.string.er_tv_scan)) }
+                    Button(onClick = { scanning = true }, modifier = Modifier.fillMaxWidth()) { Text(stringResource(R.string.er_tv_scan)) }
                     Spacer(Modifier.height(Spacing.S))
                     OutlinedTextField(
                         value = code,
@@ -179,5 +162,18 @@ fun TvLinkScreen(
                 }
             }
         }
+    }
+
+    // The scanner covers the page, upright, until a code is read or it is closed.
+    if (scanning) {
+        androidx.activity.compose.BackHandler { scanning = false }
+        QrScanner(
+            onResult = { text ->
+                scanning = false
+                val found = TvLink.sessionFrom(text)
+                if (found != null) find(session = found) else state = LinkState.Failed(R.string.er_tv_not_sonara)
+            },
+            onClose = { scanning = false },
+        )
     }
 }
