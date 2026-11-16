@@ -59,8 +59,13 @@ import javax.crypto.spec.SecretKeySpec
 
 object LyricsTranslator {
     /** Stored in [com.metrolist.music.db.entities.LyricsEntity.translationMode]. */
-    // Bumped when the prompt changes, so translations saved by an older prompt are redone.
-    const val MODE = "Sonara-2"
+    // The proxy's prompt version (Cache::PROMPT_VERSION). Bumped when the prompt changes, so
+    // translations saved by an older prompt are redone. A translation is saved under the version
+    // the proxy says it made it with, so one from a proxy not yet updated is asked for again later.
+    const val MODE = "Sonara-3"
+
+    /** A song's translation and the prompt version the proxy made it with. */
+    class Translated(val lines: Map<String, String>, val mode: String)
 
     /** English unless the user picks another language in Settings. */
     const val DEFAULT_LANGUAGE = "en"
@@ -130,20 +135,25 @@ object LyricsTranslator {
         context: Context,
         lines: List<String>,
         target: String,
-    ): Result<Map<String, String>> =
+    ): Result<Translated> =
         withContext(Dispatchers.IO) {
             runCatching {
                 check(apiAvailable) { "No client secret built in" }
                 check(System.currentTimeMillis() >= pausedUntil) { "Translation paused after too many requests" }
                 val install = installId(context)
                 val sources = lines.map { it.trim() }.filter { it.isNotEmpty() && !isVocalsOnly(it) }.distinct()
-                coroutineScope {
-                    sources
-                        .chunked(REQUEST_LINES)
-                        .map { batch -> async { requestTranslation(batch, target, install) } }
-                        .awaitAll()
-                        .fold(emptyMap<String, String>()) { all, part -> all + part }
-                }
+                val parts =
+                    coroutineScope {
+                        sources
+                            .chunked(REQUEST_LINES)
+                            .map { batch -> async { requestTranslation(batch, target, install) } }
+                            .awaitAll()
+                    }
+                Translated(
+                    parts.fold(emptyMap()) { all, part -> all + part.lines },
+                    // Every part must come from the current prompt for the whole to count as it.
+                    if (parts.all { it.mode == MODE }) MODE else OLD_MODE,
+                )
             }.onFailure {
                 if (it is CancellationException) throw it
                 Timber.w(it, "Lyrics translation failed")
@@ -189,15 +199,24 @@ object LyricsTranslator {
         songId: String,
     ): Boolean = songs.any { it.startsWith("$songId|") }
 
-    /** The saved translation of [entity] into [target], or null when there is none yet. */
+    /**
+     * The saved translation of [entity] into [target], or null when there is none yet. One made
+     * by an older prompt still shows until the new one replaces it (see [isCurrent]).
+     */
     fun storedFor(
         entity: LyricsEntity?,
         target: String,
     ): Map<String, String>? =
         entity
             // An empty translation is a result too: the whole song was already in that language.
-            ?.takeIf { it.translationLanguage == target && it.translationMode == MODE }
+            ?.takeIf { it.translationLanguage == target && it.translationMode.isNotEmpty() }
             ?.let { decode(it.translatedLyrics) }
+
+    /** Whether [entity]'s saved translation into [target] was made by the current prompt. */
+    fun isCurrent(
+        entity: LyricsEntity?,
+        target: String,
+    ): Boolean = entity != null && entity.translationLanguage == target && entity.translationMode == MODE
 
     /**
      * When the AI translator is on, translates the saved lyrics of [songId] into the chosen
@@ -217,7 +236,7 @@ object LyricsTranslator {
         val target = prefs[LyricsTranslateLanguageKey] ?: DEFAULT_LANGUAGE
         val entity = database.lyrics(songId).first() ?: return true
         val text = entity.lyrics.trim()
-        if (text.isEmpty() || text == LyricsEntity.LYRICS_NOT_FOUND || storedFor(entity, target) != null) return true
+        if (text.isEmpty() || text == LyricsEntity.LYRICS_NOT_FOUND || isCurrent(entity, target)) return true
         val key = "$songId|$target"
         if (!claim(key)) return true
         try {
@@ -227,7 +246,7 @@ object LyricsTranslator {
                 val current = database.lyrics(songId).first()
                 // Lyrics edited or replaced meanwhile: this translation belongs to the old text.
                 if (current != null && current.lyrics == entity.lyrics) {
-                    database.upsert(current.copy(translatedLyrics = encode(found), translationLanguage = target, translationMode = MODE))
+                    database.upsert(current.copy(translatedLyrics = encode(found.lines), translationLanguage = target, translationMode = found.mode))
                 }
             }
             return true
@@ -252,7 +271,7 @@ object LyricsTranslator {
         batch: List<String>,
         target: String,
         install: String,
-    ): Map<String, String> {
+    ): Translated {
         val body =
             buildJsonObject {
                 put("target", target)
@@ -275,10 +294,17 @@ object LyricsTranslator {
         }
         check(response.status.isSuccess()) { "Translation proxy: HTTP ${response.status.value}" }
         val numbered = checkNotNull(parseAiLines(text)) { "Translation proxy: unexpected answer" }
-        return numbered.mapNotNull { (n, translated) -> batch.getOrNull(n - 1)?.let { it to translated } }.toMap()
+        // A proxy from before 2.5.1 doesn't say its prompt version: the old prompt.
+        val mode =
+            (runCatching { json.parseToJsonElement(text) }.getOrNull() as? JsonObject)
+                ?.get("prompt")
+                ?.let { (it as? JsonPrimitive)?.contentOrNull }
+                ?: OLD_MODE
+        return Translated(numbered.mapNotNull { (n, translated) -> batch.getOrNull(n - 1)?.let { it to translated } }.toMap(), mode)
     }
 
     private const val TRANSLATE_PATH = "/api/translate"
+    private const val OLD_MODE = "Sonara-2"
     private const val DEFAULT_PAUSE_SECONDS = 60L
     private const val MAX_PAUSE_SECONDS = 3600L
 

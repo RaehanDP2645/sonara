@@ -56,6 +56,9 @@ object Settings {
 
     /** Lyrics in another script also in Latin letters (LyricsRomanizer, shared with the phone). */
     val romanize = Pref("romanize", true, String::toBoolean)
+
+    /** With romanization on: "both" (the line, Latin under it) or "latin" (Latin in its place). */
+    val romanizeShow = Pref("romanize_show", "both") { it }
     val translateLanguage = Pref("translate_language", "en") { it }
     val normalize = Pref("normalize", true, String::toBoolean)
     val highQuality = Pref("high_quality", true, String::toBoolean)

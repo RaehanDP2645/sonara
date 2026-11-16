@@ -5,6 +5,9 @@
 
 package com.metrolist.music.ui.player
 
+import androidx.compose.runtime.DisposableEffect
+import com.metrolist.music.ui.component.PlayerTint
+import com.metrolist.music.ui.component.PlayerSheet
 import com.metrolist.music.ui.theme.WindowLayout
 import androidx.compose.foundation.layout.widthIn
 import com.metrolist.music.ui.theme.rememberWindowLayout
@@ -14,6 +17,13 @@ import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.text.rememberTextMeasurer
 import com.metrolist.music.db.entities.LyricsEntity
 import com.metrolist.music.lyrics.LyricsUtils
+import com.metrolist.music.lyrics.LyricsRomanizer
+import com.metrolist.music.constants.LyricsRomanizeKey
+import com.metrolist.music.constants.LyricsRomanizeShowKey
+import com.metrolist.music.constants.ROMANIZE_SHOW_BOTH
+import com.metrolist.music.constants.ROMANIZE_SHOW_LATIN
+import com.metrolist.music.utils.rememberPreference
+import androidx.compose.runtime.produceState
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.SpanStyle
@@ -158,6 +168,12 @@ fun BottomSheetPlayer(
     var page by rememberSaveable { mutableStateOf(PlayerPage.Artwork) }
     val collapsed by remember(state) { derivedStateOf { state.isCollapsed } }
     LaunchedEffect(collapsed) { if (collapsed) page = PlayerPage.Artwork }
+
+    // Sheets and dialogs opened over the open player take the song's colour (PlayerSheet.kt).
+    val expanded by remember(state) { derivedStateOf { state.isExpanded } }
+    val accent = artwork?.accent
+    LaunchedEffect(expanded, accent) { PlayerTint.accent = if (expanded) accent else null }
+    DisposableEffect(Unit) { onDispose { PlayerTint.accent = null } }
 
     BottomSheet(
         state = state,
@@ -586,12 +602,7 @@ private fun ActionRow(
     }
     // Lyrics open in a sheet over the player, like the queue, so the cover stays where it is.
     if (showLyrics) {
-        ModalBottomSheet(
-            onDismissRequest = { showLyrics = false },
-            sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
-            shape = ErShape.SheetTop,
-            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
-        ) {
+        PlayerSheet(onDismissRequest = { showLyrics = false }) {
             LyricsPage(
                 mediaMetadata = metadata,
                 sliderPositionProvider = { seekPreview.value },
@@ -603,12 +614,7 @@ private fun ActionRow(
         }
     }
     if (showQueue) {
-        ModalBottomSheet(
-            onDismissRequest = { showQueue = false },
-            sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
-            shape = ErShape.SheetTop,
-            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
-        ) {
+        PlayerSheet(onDismissRequest = { showQueue = false }) {
             QueuePage(
                 playerBottomSheetState = state,
                 modifier = Modifier
@@ -665,6 +671,16 @@ internal fun LyricsPeek(
             runCatching { LyricsUtils.parseLyrics(text) }.getOrDefault(emptyList()).filter { it.text.isNotBlank() }
         }
     }
+    // "Latin only" romanization (Settings) shows here too: the line in Latin letters.
+    val romanize by rememberPreference(LyricsRomanizeKey, defaultValue = true)
+    val romanizeShow by rememberPreference(LyricsRomanizeShowKey, defaultValue = ROMANIZE_SHOW_BOTH)
+    val latin by produceState(emptyMap<String, String>(), lines, romanize, romanizeShow) {
+        value = emptyMap()
+        if (romanize && romanizeShow == ROMANIZE_SHOW_LATIN && lines.isNotEmpty()) {
+            value = runCatching { LyricsRomanizer.romanize(lines.map { it.text }) }.getOrDefault(emptyMap())
+        }
+    }
+    fun shown(text: String) = latin[text.trim()] ?: text
     if (lines.isEmpty()) return
     val index by remember(lines) {
         derivedStateOf { LyricsUtils.findCurrentLineIndex(lines, seekPreview.value ?: progress.position) }
@@ -678,10 +694,10 @@ internal fun LyricsPeek(
     val density = LocalDensity.current
     BoxWithConstraints(Modifier.fillMaxWidth().padding(top = Spacing.M)) {
         val textWidth = with(density) { (maxWidth - LyricsPeekBar - Spacing.M).roundToPx().coerceAtLeast(1) }
-        val reserved = remember(lines, textWidth, style) {
+        val reserved = remember(lines, latin, textWidth, style) {
             val tallest = lines.maxOf { line ->
                 measurer.measure(
-                    line.text,
+                    shown(line.text),
                     style,
                     maxLines = LYRICS_PEEK_MAX_LINES,
                     constraints = Constraints(maxWidth = textWidth),
@@ -690,7 +706,7 @@ internal fun LyricsPeek(
             with(density) { tallest.toDp() }
         }
         AnimatedContent(
-            targetState = lines.getOrNull(index)?.text ?: "\u266a",
+            targetState = lines.getOrNull(index)?.text?.let(::shown) ?: "\u266a",
             transitionSpec = { fadeIn(Motion.medium()) togetherWith fadeOut(Motion.fast()) },
             contentAlignment = Alignment.BottomStart,
             label = "lyricsPeek",

@@ -45,7 +45,7 @@ import javax.crypto.spec.SecretKeySpec
 import java.util.concurrent.TimeUnit
 
 object LyricsTranslator {
-    private const val MODE = "Sonara-2"
+    private const val MODE = "Sonara-3"
     private const val REQUEST_LINES = 300
     private const val TRANSLATE_PATH = "/api/translate"
     private const val DEFAULT_PAUSE_SECONDS = 60L
@@ -94,8 +94,10 @@ object LyricsTranslator {
                     return@withLock decode(file.readText())
                 }
                 val sources = lines.map { it.trim() }.filter { it.isNotEmpty() && !isVocalsOnly(it) }.distinct()
-                val found = sources.takeIf { it.isNotEmpty() }?.let { batch -> firstAnswer(batch, target) } ?: return@withLock emptyMap()
-                file.writeText(found.entries.joinToString("\n") { (source, text) -> "${source.replace('\t', ' ')}$PAIR${text.replace('\t', ' ')}" })
+                val (found, current) = sources.takeIf { it.isNotEmpty() }?.let { batch -> firstAnswer(batch, target) } ?: return@withLock emptyMap()
+                // Saved only when the proxy made it with the current prompt; one from a proxy not
+                // yet updated shows now and is asked for again next time.
+                if (current) file.writeText(found.entries.joinToString("\n") { (source, text) -> "${source.replace('\t', ' ')}$PAIR${text.replace('\t', ' ')}" })
                 found
             }
         }
@@ -104,6 +106,11 @@ object LyricsTranslator {
 
     /** Run at start, as the lyrics are. */
     fun tidy() = keepNewest(dir, KEEP_FILES)
+
+    /** The song's saved translations go (its lyrics were replaced): they are made again. */
+    fun forget(trackId: String) {
+        dir.listFiles { file -> file.name.startsWith("$trackId.") }.orEmpty().forEach { it.delete() }
+    }
 
     private fun decode(stored: String): Map<String, String> =
         stored.lineSequence().mapNotNull { row ->
@@ -115,13 +122,18 @@ object LyricsTranslator {
     @Volatile
     private var pausedUntil = 0L
 
-    /** All of the song's lines, in parts of [REQUEST_LINES]; null when any part failed. */
-    private fun firstAnswer(sources: List<String>, target: String): Map<String, String>? =
-        runCatching { sources.chunked(REQUEST_LINES).fold(emptyMap<String, String>()) { all, part -> all + ask(part, target) } }
-            .getOrNull()
+    /**
+     * All of the song's lines, in parts of [REQUEST_LINES], and whether every part came from the
+     * current prompt ([MODE]); null when any part failed.
+     */
+    private fun firstAnswer(sources: List<String>, target: String): Pair<Map<String, String>, Boolean>? =
+        runCatching {
+            val parts = sources.chunked(REQUEST_LINES).map { ask(it, target) }
+            parts.fold(emptyMap<String, String>()) { all, part -> all + part.first } to parts.all { it.second }
+        }.getOrNull()
 
     /** One signed request to the proxy, answered `{"lines": [{"n": 1, "t": "..."}]}`. */
-    private fun ask(batch: List<String>, target: String): Map<String, String> {
+    private fun ask(batch: List<String>, target: String): Pair<Map<String, String>, Boolean> {
         val body =
             buildJsonObject {
                 put("target", target)
@@ -147,7 +159,10 @@ object LyricsTranslator {
                 check(response.isSuccessful) { "HTTP ${response.code}" }
                 response.body.string()
             }
-        return checkNotNull(parse(text)) { "unexpected answer" }.mapNotNull { (n, line) -> batch.getOrNull(n - 1)?.let { it to line } }.toMap()
+        val lines = checkNotNull(parse(text)) { "unexpected answer" }.mapNotNull { (n, line) -> batch.getOrNull(n - 1)?.let { it to line } }.toMap()
+        // The proxy says which prompt made it (none before 2.5.1: the old one).
+        val prompt = ((runCatching { json.parseToJsonElement(text) }.getOrNull() as? JsonObject)?.get("prompt") as? JsonPrimitive)?.contentOrNull
+        return lines to (prompt == MODE)
     }
 
     /** Hex HMAC-SHA256 of `POST`, the path, the time, the install and the body's SHA-256, as the phone signs. */

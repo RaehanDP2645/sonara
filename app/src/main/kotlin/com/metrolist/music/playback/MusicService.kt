@@ -7,6 +7,11 @@
 
 package com.metrolist.music.playback
 
+import com.metrolist.music.constants.ROMANIZE_SHOW_LATIN
+import com.metrolist.music.constants.LyricsRomanizeShowKey
+import com.metrolist.music.constants.LyricsRomanizeKey
+import com.metrolist.music.lyrics.LyricsUtils
+import com.metrolist.music.lyrics.LyricsRomanizer
 import com.metrolist.music.constants.LyricsTranslateKey
 import com.metrolist.music.constants.LyricsTranslateLanguageKey
 import com.metrolist.music.lyrics.LyricsTranslator
@@ -179,6 +184,9 @@ import com.metrolist.music.extensions.toMediaItem
 import com.metrolist.music.extensions.toPersistQueue
 import com.metrolist.music.extensions.toQueue
 import com.metrolist.music.lyrics.LyricsHelper
+import com.metrolist.music.lyrics.LyricsChecks
+import com.metrolist.music.lyrics.LyricsFreshness
+import com.metrolist.music.lyrics.LyricsProviderRegistry
 import com.metrolist.music.models.PersistPlayerState
 import com.metrolist.music.models.PersistQueue
 import com.metrolist.music.models.toMediaMetadata
@@ -641,8 +649,8 @@ class MusicService :
         player.addListener(sleepTimer!!)
         SonaraCast.attach(this, playerFlow, scope) { id ->
             withTimeoutOrNull(8_000) { database.lyrics(id).filterNotNull().first() }
-                ?.lyrics
-                ?.takeIf { it != LyricsEntity.LYRICS_NOT_FOUND }
+                ?.takeIf { it.lyrics != LyricsEntity.LYRICS_NOT_FOUND }
+                ?.let { castSubtitles(it) }
         }
 
         playerInitialized.value = true
@@ -866,7 +874,7 @@ class MusicService :
         // already translated (LyricsTranslator.ensureTranslated does nothing when it is off).
         currentMediaMetadata.distinctUntilChangedBy { it?.id }.collectLatest(scope) { mediaMetadata ->
             if (offlineMode || mediaMetadata == null) return@collectLatest
-            prefetchLyrics(mediaMetadata)
+            prefetchLyrics(mediaMetadata, recheck = true)
             LyricsTranslator.ensureTranslated(this@MusicService, database, mediaMetadata.id)
             val next =
                 withContext(Dispatchers.Main) {
@@ -1331,9 +1339,63 @@ class MusicService :
         runCatching { filesDir.resolve(PERSISTENT_PLAYER_STATE_FILE).delete() }
     }
 
-    private suspend fun prefetchLyrics(mediaMetadata: com.metrolist.music.models.MediaMetadata) {
-        if (database.lyrics(mediaMetadata.id).first() != null) return
+    /**
+     * The lyrics on the TV while casting, as on the phone: with romanization on, each line's
+     * Latin letters under it (or in its place with "Latin only"), and the translation under that
+     * when the translator is on and the song is already translated.
+     */
+    private suspend fun castSubtitles(entity: LyricsEntity): String? {
+        val prefs = dataStore.data.first()
+        val lines = runCatching { LyricsUtils.parseLyrics(entity.lyrics) }.getOrDefault(emptyList()).map { it.text }
+        val latin =
+            if (prefs[LyricsRomanizeKey] ?: true) {
+                runCatching { LyricsRomanizer.romanize(lines) }.getOrDefault(emptyMap())
+            } else {
+                emptyMap()
+            }
+        val latinOnly = prefs[LyricsRomanizeShowKey] == ROMANIZE_SHOW_LATIN
+        val translations =
+            if (prefs[LyricsTranslateKey] == true) {
+                LyricsTranslator.storedFor(entity, prefs[LyricsTranslateLanguageKey] ?: LyricsTranslator.DEFAULT_LANGUAGE).orEmpty()
+            } else {
+                emptyMap()
+            }
+        return toWebVtt(entity.lyrics) { line ->
+            val roman = latin[line]
+            buildList {
+                add(if (latinOnly && roman != null) roman else line)
+                if (!latinOnly && roman != null) add(roman)
+                translations[line]?.takeIf { LyricsTranslator.shouldShow(line, it) }?.let(::add)
+            }.joinToString("\n")
+        }
+    }
+
+    /**
+     * Fetches the song's lyrics when none are saved. With [recheck] (the song playing now), saved
+     * lyrics that may not be the best there is are looked up again, at most once a day, and
+     * replaced only by better ones (LyricsFreshness); a replaced text loses its translation,
+     * which is then made again for the new text.
+     */
+    private suspend fun prefetchLyrics(
+        mediaMetadata: com.metrolist.music.models.MediaMetadata,
+        recheck: Boolean = false,
+    ) {
+        val saved = database.lyrics(mediaMetadata.id).first()
+        val ranking = LyricsProviderRegistry.providerNames
+        if (saved != null) {
+            val due = recheck && LyricsFreshness.isDue(
+                saved.provider, saved.lyrics, ranking,
+                LyricsChecks.lastCheck(this, mediaMetadata.id), System.currentTimeMillis(),
+            )
+            if (!due) return
+        }
         val lyricsWithProvider = runCatching { lyricsHelper.getLyrics(mediaMetadata) }.getOrNull() ?: return
+        LyricsChecks.markChecked(this, mediaMetadata.id)
+        if (saved != null &&
+            !LyricsFreshness.isBetter(lyricsWithProvider.provider, lyricsWithProvider.lyrics, saved.provider, saved.lyrics, ranking)
+        ) {
+            return
+        }
         database.query {
             upsert(
                 LyricsEntity(

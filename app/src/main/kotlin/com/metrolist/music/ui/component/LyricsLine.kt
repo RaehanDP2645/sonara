@@ -91,6 +91,7 @@ internal fun LyricsLine(
     translation: String?,
     isActiveLine: Boolean,
     romanized: String? = null,
+    latinOnly: Boolean = false,
     bgVisible: Boolean,
     isSelected: Boolean,
     isSelectionModeActive: Boolean,
@@ -189,7 +190,11 @@ internal fun LyricsLine(
                 val animatedAlpha by animateFloatAsState(targetAlpha, tween(350), label = "lyricsLineAlpha")
                 val lineColor = expressiveAccent.copy(alpha = animatedAlpha)
                 
-                val mainText = if (item.isBackground) item.text.removePrefix("(").removeSuffix(")") else item.text
+                // "Latin only" (Settings): the Latin letters take the line's place. Their words
+                // don't match the line's word timings, so they light up evenly instead.
+                val showsLatin = latinOnly && romanized != null
+                val lineText = if (showsLatin) romanized!! else item.text
+                val mainText = if (item.isBackground) lineText.removePrefix("(").removeSuffix(")") else lineText
 
                 val lyricStyle = TextStyle(
                     fontSize = if (item.isBackground) (lyricsTextSize * 0.7f).sp else lyricsTextSize.sp,
@@ -206,7 +211,7 @@ internal fun LyricsLine(
                     )
                 )
 
-                val itemWords = item.words
+                val itemWords = if (showsLatin) null else item.words
                 val effectiveWords = if (!itemWords.isNullOrEmpty()) {
                     itemWords
                 } else {
@@ -249,7 +254,7 @@ internal fun LyricsLine(
                     )
                 }
                 // The line in Latin letters (romanization), right under it: read while singing.
-                if (romanized != null) {
+                if (romanized != null && !showsLatin) {
                     Text(
                         text = romanized,
                         style = lyricStyle.copy(
@@ -262,8 +267,9 @@ internal fun LyricsLine(
                         modifier = Modifier.fillMaxWidth().padding(top = 2.dp)
                     )
                 }
-                // The translation, smaller and dimmer, under the line; hidden when it says the
-                // same as the line (already in that language) or the line is only "ooh"s.
+                // The translation, under the line; hidden when it says the same as the line
+                // (already in that language) or the line is only "ooh"s. Set apart from the
+                // lyrics and their Latin letters: italic, in a light shade of the song's colour, a little lower.
                 if (translation != null && LyricsTranslator.shouldShow(item.text, translation)) {
                     Text(
                         text = translation,
@@ -271,10 +277,11 @@ internal fun LyricsLine(
                             fontSize = (lyricStyle.fontSize.value * TRANSLATION_SCALE).sp,
                             lineHeight = (lyricStyle.fontSize.value * TRANSLATION_SCALE * lyricsLineSpacing).sp,
                             fontWeight = FontWeight.Medium,
+                            fontStyle = FontStyle.Italic,
                             letterSpacing = 0.sp,
-                            color = expressiveAccent.copy(alpha = animatedAlpha * TRANSLATION_ALPHA),
+                            color = playerTextAccent(MaterialTheme.colorScheme.primary).copy(alpha = animatedAlpha * TRANSLATION_ALPHA),
                         ),
-                        modifier = Modifier.fillMaxWidth().padding(top = 4.dp)
+                        modifier = Modifier.fillMaxWidth().padding(top = 6.dp)
                     )
                 }
             }
@@ -462,6 +469,6 @@ private const val INACTIVE_ALPHA = 0.32f
 private fun easeOut(x: Float) = 1f - (1f - x).let { it * it * it }
 
 private const val TRANSLATION_SCALE = 0.62f
-private const val TRANSLATION_ALPHA = 0.75f
+private const val TRANSLATION_ALPHA = 0.9f
 private const val ROMANIZED_SCALE = 0.66f
 private const val ROMANIZED_ALPHA = 0.7f

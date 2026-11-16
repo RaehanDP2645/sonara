@@ -20,6 +20,7 @@ import kotlinx.coroutines.CoroutineScope
 import androidx.compose.runtime.snapshotFlow
 import com.ermusic.desktop.data.Settings
 import com.ermusic.desktop.AppFiles
+import com.metrolist.music.lyrics.LyricsFreshness
 import android.content.Context
 import com.metrolist.paxsenix.Paxsenix
 import com.metrolist.music.lyrics.BetterLyricsProvider
@@ -81,6 +82,28 @@ object LyricsRepository {
 
     private fun stored(id: String) = File(dir, "$id.txt")
 
+    /** When each song's lyrics were last looked up (LyricsFreshness: at most once a day). */
+    private val checks = LyricsCheckTimes(File(AppFiles.root, "lyrics-checks.properties"))
+    private val ranking: List<String> get() = sources.map { it.name }
+
+    /**
+     * Saved lyrics that may not be the best (a source lower in the list, untimed) are looked up
+     * again in the background, once a day at most; better ones replace them, and the lyrics page
+     * shows them the next time it opens them.
+     */
+    private fun recheckLater(track: Track, saved: Lyrics, savedText: String) {
+        if (!LyricsFreshness.isDue(saved.source, savedText, ranking, checks.last(track.id), System.currentTimeMillis())) return
+        scope.launch {
+            val found = search(track)
+            checks.mark(track.id)
+            if (found != null && LyricsFreshness.isBetter(found.second.source, found.first, saved.source, savedText, ranking)) {
+                runCatching { stored(track.id).writeText(found.second.source + "\n" + found.first) }
+                LyricsTranslator.forget(track.id)
+                cache[track.id] = found.second
+            }
+        }
+    }
+
     /** Run at start: the lyrics of the songs played longest ago go past a few thousand. */
     fun tidy() = keepNewest(dir, KEEP_FILES)
 
@@ -111,7 +134,20 @@ object LyricsRepository {
 
     private suspend fun find(track: Track): Lyrics? =
         withContext(Dispatchers.IO) {
-            readStored(track.id)?.let { return@withContext it.also { cache[track.id] = it } }
+            readStored(track.id)?.let { (lyrics, text) ->
+                recheckLater(track, lyrics, text)
+                return@withContext lyrics.also { cache[track.id] = it }
+            }
+            // Nothing saved: looked for at every play, so a song played offline gets them later.
+            val found = search(track) ?: return@withContext null
+            checks.mark(track.id)
+            runCatching { stored(track.id).writeText(found.second.source + "\n" + found.first) }
+            found.second.also { cache[track.id] = it }
+        }
+
+    /** Every source at once, taken in their order: the first answer's text and lyrics. */
+    private suspend fun search(track: Track): Pair<String, Lyrics>? =
+        withContext(Dispatchers.IO) {
             val title = LyricsUtils.cleanTitleForSearch(track.title)
             val seconds = (track.durationMs / SECONDS_DIVISOR).toInt()
             coroutineScope {
@@ -128,27 +164,29 @@ object LyricsRepository {
                                 }
                             }
                     }
-                var found: Lyrics? = null
+                var found: Pair<String, Lyrics>? = null
                 for ((source, attempt) in pending) {
                     val text = attempt.await()?.getOrNull()?.let(LyricsUtils::filterLyricsCreditLines)
-                    found = text?.let { parse(it, source.name) }
-                    if (found != null) {
-                        runCatching { stored(track.id).writeText(source.name + "\n" + text) }
+                    val lyrics = text?.let { parse(it, source.name) }
+                    if (text != null && lyrics != null) {
+                        found = text to lyrics
                         break
                     }
                 }
                 pending.forEach { (_, attempt) -> attempt.cancel() }
                 found
-            }?.also { cache[track.id] = it }
+            }
         }
 
-    private fun readStored(id: String): Lyrics? {
+    /** The saved lyrics and their text as the source gave it. */
+    private fun readStored(id: String): Pair<Lyrics, String>? {
         val file = stored(id).takeIf { it.exists() } ?: return null
         val text = runCatching { file.readText() }.getOrNull() ?: return null
         file.setLastModified(System.currentTimeMillis())
         val split = text.indexOf('\n')
         if (split <= 0) return null
-        return parse(text.substring(split + 1), text.substring(0, split))
+        val body = text.substring(split + 1)
+        return parse(body, text.substring(0, split))?.let { it to body }
     }
 
     private fun parse(text: String, source: String): Lyrics? {

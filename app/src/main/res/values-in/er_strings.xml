@@ -196,7 +196,6 @@
     <string name="er_search_field_hint">Cari lagu, artis, playlist</string>
     <string name="er_settings_lyrics">Lirik</string>
     <string name="er_ai_translator">Penerjemah AI</string>
-    <string name="er_ai_translator_desc">Terjemahkan lirik otomatis, baris demi baris</string>
     <string name="er_translate_to">Terjemahkan ke</string>
     <string name="er_mic_permission">Izinkan mikrofon di pengaturan aplikasi Sonara untuk memakai fitur ini</string>
     <string name="er_lyrics_translated">Diterjemahkan otomatis, bisa kurang tepat</string>

@@ -151,6 +151,7 @@ fun ExperimentalLyrics(
     showLyrics: Boolean,
     translations: Map<String, String> = emptyMap(),
     romanizations: Map<String, String> = emptyMap(),
+    latinOnly: Boolean = false,
     lyricsViewModel: LyricsViewModel = hiltViewModel()
 ) {
     val playerConnection = LocalPlayerConnection.current ?: return
@@ -729,6 +730,7 @@ fun ExperimentalLyrics(
                                         index = index, item = item, isSynced = isSynced,
                                         translation = translations[item.text.trim()],
                                         romanized = romanizations[item.text.trim()],
+                                        latinOnly = latinOnly,
                                         isActiveLine = isActiveLine,
                                         bgVisible = bgVisible, isSelected = selectedIndices.contains(index),
                                         isSelectionModeActive = isSelectionModeActive, currentPositionState = currentPositionState,
@@ -748,10 +750,16 @@ fun ExperimentalLyrics(
                                             } else if (changeLyrics) {
                                                 if (item.time < playerConnection.duration + 30000L) {
                                                     playerConnection.seekTo((item.time - (currentSong?.song?.lyricsOffset ?: 0)).coerceAtLeast(0))
-                                                } else {
-                                                    scrollTargetIndex = index
-                                                    deferredCurrentLineIndex = index
                                                 }
+                                                // The tapped line becomes the focus at once, earlier
+                                                // ones too: the follow-along only moves forward, so a
+                                                // line before the current one stayed above the anchor
+                                                // until a later line took over.
+                                                flingJob?.cancel()
+                                                scrollTargetIndex = index
+                                                deferredCurrentLineIndex = index
+                                                lastMainMaxSeen = index
+                                                previousScrollActiveIndices = emptySet()
                                                 isAutoScrollEnabled = true
                                                 lastPreviewTime = 0L
                                             }
@@ -797,7 +805,7 @@ fun ExperimentalLyrics(
 
     if (showProgressDialog) {
         BasicAlertDialog(onDismissRequest = {}) {
-            Card(shape = MaterialTheme.shapes.medium, colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)) {
+            Card(shape = MaterialTheme.shapes.medium, colors = CardDefaults.cardColors(containerColor = playerDialogColor(MaterialTheme.colorScheme.surface))) {
                 Box(Modifier.padding(32.dp)) { Text(stringResource(R.string.generating_image) + "\n" + stringResource(R.string.please_wait)) }
             }
         }

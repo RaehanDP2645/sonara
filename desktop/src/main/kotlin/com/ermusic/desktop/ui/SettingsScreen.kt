@@ -162,8 +162,11 @@ fun SettingsScreen(app: AppState) {
             }
             item(key = "lyrics", contentType = "group") {
                 Group("Lyrics") {
-                    SwitchRow("Romanization", "Lyrics in Japanese, Korean, Chinese and other scripts also in Latin letters.", Settings.romanize)
-                    SwitchRow("AI translator", "Translates lyrics as soon as they load.", Settings.translator)
+                    SwitchRow("Romanization", null, Settings.romanize)
+                    if (Settings.romanize.value) {
+                        ChoiceRow("Show", null, listOf("both" to "Original and Latin", "latin" to "Latin only"), Settings.romanizeShow.value) { Settings.romanizeShow.value = it }
+                    }
+                    SwitchRow("AI translator", null, Settings.translator)
                     if (Settings.translator.value) {
                         ChoiceRow("Translate into", null, LyricsTranslator.languages, Settings.translateLanguage.value, Modifier.height(MENU_HEIGHT)) { Settings.translateLanguage.value = it }
                     }

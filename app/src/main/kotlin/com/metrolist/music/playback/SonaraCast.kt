@@ -48,8 +48,14 @@ import com.google.android.gms.cast.MediaMetadata as CastMetadata
 private const val LYRICS_TRACK_ID = 1L
 private const val TV_ART_PX = 1200
 
-/** Synced lyrics (LRC) as WebVTT cues; null when the lyrics have no timing. */
-internal fun toWebVtt(lrc: String): String? {
+/**
+ * Synced lyrics (LRC) as WebVTT cues, each line's cue made by [cue] (the line itself, or with its
+ * Latin letters and translation, as the phone shows them); null when the lyrics have no timing.
+ */
+internal fun toWebVtt(
+    lrc: String,
+    cue: (String) -> String = { it },
+): String? {
     val lines = LyricsUtils.parseLyrics(lrc).filter { it.text.isNotBlank() }
     if (lines.size < 2 || lines.all { it.time == 0L }) return null
     fun stamp(ms: Long) = "%02d:%02d:%02d.%03d".format(ms / 3_600_000, ms / 60_000 % 60, ms / 1000 % 60, ms % 1000)
@@ -58,7 +64,9 @@ internal fun toWebVtt(lrc: String): String? {
         lines.forEachIndexed { i, line ->
             val end = lines.getOrNull(i + 1)?.time ?: (line.time + 5_000)
             append(stamp(line.time)).append(" --> ").append(stamp(maxOf(end, line.time + 500))).append('\n')
-            append(line.text.trim()).append("\n\n")
+            // A cue ends at its first blank line, so its own lines never contain one.
+            val text = cue(line.text.trim()).lines().map { it.trim() }.filter { it.isNotEmpty() }.joinToString("\n")
+            append(text.ifEmpty { line.text.trim() }).append("\n\n")
         }
     }
 }
@@ -124,6 +132,7 @@ object SonaraCast {
         context: Context,
         players: StateFlow<Player?>,
         scope: CoroutineScope,
+        // The song's lyrics as WebVTT subtitles for the TV, or null.
         lyrics: suspend (String) -> String? = { null },
     ) {
         lyricsFor = lyrics
@@ -231,7 +240,7 @@ object SonaraCast {
             }
             // Synced lyrics ride along as a subtitle track. A data: URL avoids serving files from
             // the phone (the receiver page is HTTPS and would block plain HTTP from the LAN).
-            val vtt = lyricsFor?.invoke(meta.id)?.let(::toWebVtt)
+            val vtt = lyricsFor?.invoke(meta.id)
             val info = MediaInfo.Builder(playback.streamUrl)
                 .setStreamType(MediaInfo.STREAM_TYPE_BUFFERED)
                 .setContentType(playback.format.mimeType.substringBefore(";").trim())

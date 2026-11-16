@@ -85,6 +85,9 @@ import com.metrolist.music.constants.HideVideoSongsKey
 import com.metrolist.music.constants.InnerTubeCookieKey
 import com.metrolist.music.constants.LyricsTranslateKey
 import com.metrolist.music.constants.LyricsRomanizeKey
+import com.metrolist.music.constants.LyricsRomanizeShowKey
+import com.metrolist.music.constants.ROMANIZE_SHOW_BOTH
+import com.metrolist.music.constants.ROMANIZE_SHOW_LATIN
 import com.metrolist.music.constants.LyricsTranslateLanguageKey
 import com.metrolist.music.constants.WifiOnlyDownloadsKey
 import com.metrolist.music.extensions.tryOrNull
@@ -133,6 +136,8 @@ fun SettingsScreen(navController: NavController) {
     val themeMenu = remember { mutableStateOf(false) }
     val (aiTranslate, onAiTranslate) = rememberPreference(LyricsTranslateKey, false)
     val (romanize, onRomanize) = rememberPreference(LyricsRomanizeKey, true)
+    val (romanizeShow, onRomanizeShow) = rememberPreference(LyricsRomanizeShowKey, ROMANIZE_SHOW_BOTH)
+    val romanizeMenu = remember { mutableStateOf(false) }
     val (translateTo, onTranslateTo) = rememberPreference(LyricsTranslateLanguageKey, LyricsTranslator.DEFAULT_LANGUAGE)
     val translateMenu = remember { mutableStateOf(false) }
 
@@ -221,14 +226,38 @@ fun SettingsScreen(navController: NavController) {
                 Material3SettingsItem(
                     icon = painterResource(R.drawable.language),
                     title = { Text(stringResource(R.string.er_romanize_lyrics)) },
-                    description = { Text(stringResource(R.string.er_romanize_lyrics_desc)) },
                     trailingContent = { Switch(checked = romanize, onCheckedChange = onRomanize) },
                     onClick = { onRomanize(!romanize) },
+                ),
+                // Under it, like crossfade's seconds: the line and its Latin letters, or Latin only.
+                Material3SettingsItem(
+                    visible = romanize,
+                    title = { Text(stringResource(R.string.er_romanize_show)) },
+                    trailingContent = {
+                        val choices = listOf(
+                            ROMANIZE_SHOW_BOTH to stringResource(R.string.er_romanize_show_both),
+                            ROMANIZE_SHOW_LATIN to stringResource(R.string.er_romanize_show_latin),
+                        )
+                        Box {
+                            ValueText(choices.firstOrNull { it.first == romanizeShow }?.second ?: choices.first().second)
+                            DropdownMenu(expanded = romanizeMenu.value, onDismissRequest = { romanizeMenu.value = false }) {
+                                choices.forEach { (value, label) ->
+                                    DropdownMenuItem(
+                                        text = { Text(label) },
+                                        onClick = {
+                                            onRomanizeShow(value)
+                                            romanizeMenu.value = false
+                                        },
+                                    )
+                                }
+                            }
+                        }
+                    },
+                    onClick = { romanizeMenu.value = true },
                 ),
                 Material3SettingsItem(
                     icon = painterResource(R.drawable.translate),
                     title = { Text(stringResource(R.string.er_ai_translator)) },
-                    description = { Text(stringResource(R.string.er_ai_translator_desc)) },
                     trailingContent = { Switch(checked = aiTranslate, onCheckedChange = onAiTranslate) },
                     onClick = { onAiTranslate(!aiTranslate) },
                 ),

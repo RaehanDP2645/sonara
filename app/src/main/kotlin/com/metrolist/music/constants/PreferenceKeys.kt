@@ -410,6 +410,14 @@ val UpdateLastCheckKey = longPreferencesKey("updateLastCheck")
 /** Lyrics in Latin letters under lines in another script (Settings), see LyricsRomanizer; on by default. */
 val LyricsRomanizeKey = booleanPreferencesKey("lyricsRomanize")
 
+/**
+ * With romanization on: "both" (the line, its Latin letters under it; the default) or "latin"
+ * (the Latin letters in place of the line, in the lyrics and the player's lyric preview).
+ */
+val LyricsRomanizeShowKey = stringPreferencesKey("lyricsRomanizeShow")
+const val ROMANIZE_SHOW_BOTH = "both"
+const val ROMANIZE_SHOW_LATIN = "latin"
+
 /** The language lyrics are translated into; English by default. */
 val LyricsTranslateLanguageKey = stringPreferencesKey("lyricsTranslateLanguage")
 

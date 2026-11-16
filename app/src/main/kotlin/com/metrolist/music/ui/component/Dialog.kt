@@ -78,7 +78,7 @@ fun DefaultDialog(
         Surface(
             modifier = Modifier.padding(24.dp),
             shape = AlertDialogDefaults.shape,
-            color = AlertDialogDefaults.containerColor,
+            color = playerDialogColor(AlertDialogDefaults.containerColor),
             tonalElevation = AlertDialogDefaults.TonalElevation,
         ) {
             Column(
@@ -205,7 +205,7 @@ fun ListDialog(
         Surface(
             modifier = Modifier.padding(24.dp),
             shape = AlertDialogDefaults.shape,
-            color = AlertDialogDefaults.containerColor,
+            color = playerDialogColor(AlertDialogDefaults.containerColor),
             tonalElevation = AlertDialogDefaults.TonalElevation,
         ) {
             Column(

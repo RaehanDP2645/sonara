@@ -102,7 +102,7 @@ internal fun LyricsSharePreview(
     BasicAlertDialog(onDismissRequest = onDismiss) {
         Card(
             shape = ErShape.Large,
-            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh),
+            colors = CardDefaults.cardColors(containerColor = playerDialogColor(MaterialTheme.colorScheme.surfaceContainerHigh)),
         ) {
             Column(Modifier.padding(Spacing.L)) {
                 Image(

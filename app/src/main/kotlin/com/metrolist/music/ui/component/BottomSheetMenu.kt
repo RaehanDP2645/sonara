@@ -133,25 +133,20 @@ fun BottomSheetMenu(
             state.isVisible = false
         },
         sheetState = sheetState,
-        containerColor = background,
+        // Painted by PlayerSheetColumn: the theme's surface, or the song's colour over the player.
+        containerColor = playerSheetColor(background),
         contentColor = MaterialTheme.colorScheme.onSurface,
-        dragHandle = {
-            Box(
-                modifier = Modifier
-                    .padding(vertical = 12.dp)
-                    .size(width = 40.dp, height = 4.dp)
-                    .clip(RoundedCornerShape(2.dp))
-                    .background(MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f))
-            )
-        },
+        dragHandle = null,
         modifier = modifier.fillMaxHeight()
     ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 20.dp)
-        ) {
-            state.content(this)
+        PlayerSheetColumn(Modifier.fillMaxHeight(), base = background) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 20.dp)
+            ) {
+                state.content(this)
+            }
         }
     }
 }

@@ -26,6 +26,9 @@ import com.metrolist.music.LocalDatabase
 import com.metrolist.music.LocalPlayerConnection
 import com.metrolist.music.R
 import com.metrolist.music.constants.LyricsRomanizeKey
+import com.metrolist.music.constants.LyricsRomanizeShowKey
+import com.metrolist.music.constants.ROMANIZE_SHOW_BOTH
+import com.metrolist.music.constants.ROMANIZE_SHOW_LATIN
 import com.metrolist.music.constants.LyricsTranslateKey
 import com.metrolist.music.constants.LyricsTranslateLanguageKey
 import com.metrolist.music.db.entities.LyricsEntity
@@ -73,6 +76,7 @@ fun LyricsPage(
                         .fromApplication(context.applicationContext, LyricsHelperEntryPoint::class.java)
                         .lyricsHelper()
                 val fetched = helper.getLyrics(mediaMetadata)
+                com.metrolist.music.lyrics.LyricsChecks.markChecked(context, mediaMetadata.id)
                 database.query { upsert(LyricsEntity(mediaMetadata.id, fetched.lyrics, fetched.provider)) }
             }
         }
@@ -98,6 +102,7 @@ fun LyricsPage(
     // Romanization (Settings, on by default): lines in another script also in Latin letters,
     // made on the device for the lyrics on screen. Lines it cannot romanize get nothing.
     val romanize by rememberPreference(LyricsRomanizeKey, defaultValue = true)
+    val latinOnly by rememberPreference(LyricsRomanizeShowKey, defaultValue = ROMANIZE_SHOW_BOTH)
     val romanizations by produceState(emptyMap<String, String>(), romanize, lyrics) {
         value = emptyMap()
         val text = lyrics
@@ -118,6 +123,7 @@ fun LyricsPage(
                         showLyrics = true,
                         translations = if (translate) stored.orEmpty() else emptyMap(),
                         romanizations = romanizations,
+                        latinOnly = latinOnly == ROMANIZE_SHOW_LATIN,
                         modifier = Modifier.padding(horizontal = Spacing.XS),
                     )
                 }

@@ -5,6 +5,7 @@
 
 package com.metrolist.music.ui.player
 
+import com.metrolist.music.ui.component.PlayerSheet
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -60,7 +61,7 @@ fun SleepTimerSheet(
         }
     }
 
-    ModalBottomSheet(onDismissRequest = onDismiss, shape = ErShape.SheetTop, containerColor = MaterialTheme.colorScheme.surfaceContainerHigh) {
+    PlayerSheet(onDismissRequest = onDismiss) {
         Column(Modifier.fillMaxWidth().navigationBarsPadding()) {
             Text(
                 stringResource(R.string.sleep_timer),

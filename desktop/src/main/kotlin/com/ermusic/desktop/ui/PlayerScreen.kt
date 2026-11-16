@@ -89,6 +89,7 @@ import androidx.compose.ui.input.pointer.pointerHoverIcon
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.style.TextAlign
@@ -421,7 +422,7 @@ private fun WordSyncedLine(words: List<LyricWord>, style: TextStyle, position: S
 }
 
 @Composable
-private fun LyricRow(line: LyricLine, translation: String?, romanized: String?, distance: Int, synced: Boolean, position: State<Long>, large: Boolean, centered: Boolean, onSeek: () -> Unit) {
+private fun LyricRow(line: LyricLine, translation: String?, romanized: String?, latinOnly: Boolean, distance: Int, synced: Boolean, position: State<Long>, large: Boolean, centered: Boolean, onSeek: () -> Unit) {
     val active = distance == 0
     val alpha by animateFloatAsState(
         when {
@@ -451,18 +452,23 @@ private fun LyricRow(line: LyricLine, translation: String?, romanized: String?, 
                 transformOrigin = TransformOrigin(if (centered) 0.5f else 0f, 0.5f)
             },
     ) {
-        if (active && synced && line.words != null) {
+        // "Latin only" (Settings): the Latin letters take the line's place, without word timing.
+        val showsLatin = latinOnly && romanized != null
+        if (showsLatin) {
+            Text(romanized.orEmpty(), style = style.copy(color = MaterialTheme.colorScheme.onSurface))
+        } else if (active && synced && line.words != null) {
             WordSyncedLine(line.words, style, position, centered)
         } else {
             Text(line.text, style = style.copy(color = MaterialTheme.colorScheme.onSurface))
         }
         // The line in Latin letters, right under it: read while singing.
-        if (romanized != null) {
+        if (romanized != null && !showsLatin) {
             Text(romanized, style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Normal, textAlign = align), color = MaterialTheme.colorScheme.onSurface.copy(alpha = ROMANIZED_ALPHA))
         }
         if (LyricsTranslator.shouldShow(line.text, translation)) {
             Spacer(Modifier.height(Spacing.XS))
-            Text(translation.orEmpty(), style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Medium, textAlign = align), color = MaterialTheme.colorScheme.onSurfaceVariant)
+            // Set apart from the lyrics and their Latin letters: italic, in the accent colour.
+            Text(translation.orEmpty(), style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Medium, fontStyle = FontStyle.Italic, textAlign = align), color = MaterialTheme.colorScheme.primary)
         }
     }
 }
@@ -560,12 +566,17 @@ private fun FoundLyrics(lyrics: Lyrics, player: Player, track: Track, modifier: 
                     line,
                     translations[line.text.trim()],
                     romanizations[line.text.trim()],
+                    latinOnly = Settings.romanizeShow.value == "latin",
                     distance = if (active < 0) index + 1 else kotlin.math.abs(index - active),
                     synced = lyrics.synced,
                     position = position,
                     large = large,
                     centered = centered,
-                ) { player.seek(line.timeMs) }
+                ) {
+                    // A clicked line is followed at once, even right after scrolling by hand.
+                    held = false
+                    player.seek(line.timeMs)
+                }
             }
             item(key = "credit", contentType = "credit") {
                 Column(

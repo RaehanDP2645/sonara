@@ -42,7 +42,7 @@ fun sealKey(key: String): String {
 }
 
 /** Bumped for every installer; the app shows it, and the updater compares it with the newest release. */
-val appVersion = "2.5.0"
+val appVersion = "2.5.1"
 
 val secretsDir = layout.buildDirectory.dir("generated/secrets")
 val generateSecrets by tasks.registering {
@@ -86,7 +86,7 @@ val fromAndroid by tasks.registering(Sync::class) {
         listOf(
             "LyricsProvider", "LyricsUtils", "LyricsEntry", "BetterLyricsProvider", "LrcLibLyricsProvider", "KuGouLyricsProvider",
             "PaxsenixLyricsProvider", "LyricsPlusProvider", "ZemerLyricsProvider", "YouTubeLyricsProvider", "YouTubeSubtitleLyricsProvider",
-            "LyricsRomanizer",
+            "LyricsRomanizer", "LyricsFreshness",
         ).forEach { include("music/lyrics/$it.kt") }
     }
     into(layout.buildDirectory.dir("generated/fromAndroid"))

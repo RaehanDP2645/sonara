@@ -46,8 +46,11 @@ in `docs/perf.md`; never write numbers that were not measured.
 - Experiment, requested by the owner: AI translator for lyrics (`lyrics/LyricsTranslator.kt`,
   `ui/player/LyricsPage.kt`, Settings > Lyrics). Off by default; when on, lyrics are translated
   as soon as they are fetched, into the chosen language (English by default). The model gets
-  the whole song numbered and answers only for the lines it translated, so mixed-language songs
-  and "ooh" lines are handled. Both apps ask the owner's proxy (`web/`, PHP, deployed at
+  the whole song numbered and must answer for every line, with "" for lines already in the
+  target language or only "ooh"s; lines it still leaves out are asked for once more. The prompt
+  (`web/private/src/Translator.php`, with a register note per language in `Languages.php`) asks
+  for natural sung language, not word for word. Changing the prompt: bump `Cache::PROMPT_VERSION`
+  and `MODE` in both apps' `LyricsTranslator.kt`, so old translations are redone. Both apps ask the owner's proxy (`web/`, PHP, deployed at
   `sonara.rashiiddsr.my.id/api`; see `web/DEPLOY.md`), never an AI provider: the proxy holds the
   providers' keys encrypted, tries Gemini, Groq, OpenRouter and others in the owner's order, keeps
   every song's translation for everyone and limits each install and address. Requests are signed
@@ -60,6 +63,19 @@ in `docs/perf.md`; never write numbers that were not measured.
   on by default): lines in another script also in Latin letters, made on the device with no AI:
   Kuromoji for Japanese, Revised Romanization for Korean, ICU (Android's built-in, ICU4J on the
   desktop) for Chinese pinyin and every other script. No romanization when none can be made.
+  Under it, Show: "Original and Latin" (default) or "Latin only", which puts the Latin letters in
+  the line's place in the lyrics, the player's lyric preview (`LyricsPeek`) and the Cast subtitles.
+- Translations under lyrics are italic, in a light shade of the song's colour, so they never read
+  as the lyrics or their Latin letters. While casting, the TV's subtitles (`SonaraCast.toWebVtt`)
+  carry the line, its Latin letters and the translation as the phone shows them.
+- Lyrics refresh (`lyrics/LyricsFreshness.kt`, shared with the desktop): saved lyrics from a lower
+  source, untimed, or not found are looked up again when the song plays, at most once a day
+  (times in `LyricsChecks` / `lyrics-checks.properties`, not in the database); they are replaced
+  only by better ones (timed first, then a higher source), and lose their translation then.
+  Lyrics from the first source, timed, and the user's own ("Manual") are never looked up again.
+- Sheets and dialogs over the open player (lyrics, queue, menus, sleep timer, Cast, details)
+  take the song's colour (`ui/component/PlayerSheet.kt`, `PlayerTint`); elsewhere they keep the
+  theme's surface.
 - The app always speaks English, whatever the phone's language, with no setting to change it
   (owner's choice, `utils/AppLanguage.kt`). The Indonesian strings stay in `values-in/` for now.
 - Sign-in is required (`WelcomeScreen`): one Google sign-in page in a sheet, inside the app, because
