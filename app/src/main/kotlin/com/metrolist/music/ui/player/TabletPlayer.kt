@@ -185,7 +185,10 @@ internal fun TabletPlayer(
 }
 
 /** The player column: a third of the width, never cramped, never more than half. */
-private fun playerPaneWidth(available: Dp): Dp = (available * PLAYER_PANE_SHARE).coerceIn(WindowLayout.SidePaneWidth, available / 2)
+// coerceAtLeast then coerceAtMost, not coerceIn: in a narrow window half the width is less than
+// SidePaneWidth, and coerceIn throws when its minimum is above its maximum.
+private fun playerPaneWidth(available: Dp): Dp =
+    (available * PLAYER_PANE_SHARE).coerceAtLeast(WindowLayout.SidePaneWidth).coerceAtMost(available / 2)
 
 @Composable
 private fun PanelArea(
@@ -393,7 +396,7 @@ private fun NowPlayingScreen(
 
 /** A black record turning while the song plays, the cover on its label, as on the desktop. */
 @Composable
-private fun SpinningRecord(coverUrl: String?, playing: Boolean, size: Dp) {
+internal fun SpinningRecord(coverUrl: String?, playing: Boolean, size: Dp) {
     var angle by remember { mutableFloatStateOf(0f) }
     LaunchedEffect(playing) {
         if (!playing) return@LaunchedEffect

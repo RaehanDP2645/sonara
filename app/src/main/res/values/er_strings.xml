@@ -219,6 +219,17 @@
     <string name="er_update_required_title">Update Sonara to keep using it</string>
     <string name="er_update_required">This version no longer works. Install Sonara %1$s to go on.</string>
     <string name="er_update_quit">Close Sonara</string>
+    <string name="er_tv_sign_in">Sign in on a TV</string>
+    <string name="er_tv_steps">Open Sonara TV, then scan the code on the screen or type its 6 digits.</string>
+    <string name="er_tv_scan">Scan the code</string>
+    <string name="er_tv_code">6-digit code</string>
+    <string name="er_tv_working">One moment…</string>
+    <string name="er_tv_confirm">Sign in on %1$s?</string>
+    <string name="er_tv_sign_in_action">Sign in</string>
+    <string name="er_tv_done">Signed in on %1$s.</string>
+    <string name="er_tv_not_found">That code has expired or is wrong. Check the TV and try again.</string>
+    <string name="er_tv_not_sonara">That isn\'t a Sonara TV code.</string>
+    <string name="er_tv_failed">Couldn\'t reach Sonara. Try again.</string>
     <string name="er_romanize_lyrics">Romanization</string>
     <string name="er_romanize_show">Show</string>
     <string name="er_romanize_show_both">Original and Latin</string>

@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Sonara TV only. -->
+<resources>
+    <string name="tv_on">On</string>
+    <string name="tv_off">Off</string>
+    <string name="tv_more">More</string>
+    <string name="tv_all_settings">All settings</string>
+    <string name="tv_playing">Playing</string>
+    <string name="tv_paused">Paused</string>
+    <string name="tv_minutes">%1$d min</string>
+    <string name="tv_search_lyrics_again">Search again</string>
+    <string name="tv_sign_in_title">Sign in to Sonara</string>
+    <string name="tv_sign_in_steps">On your phone, open Sonara, go to Settings, Sign in on a TV, and scan this code or type it in.</string>
+    <string name="tv_sign_in_google">Sign in with Google here</string>
+    <string name="tv_sign_in_retry">Can\'t reach Sonara. Trying again…</string>
+</resources>

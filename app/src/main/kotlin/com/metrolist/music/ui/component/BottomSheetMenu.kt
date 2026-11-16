@@ -136,6 +136,7 @@ fun BottomSheetMenu(
         // Painted by PlayerSheetColumn: the theme's surface, or the song's colour over the player.
         containerColor = playerSheetColor(background),
         scrimColor = playerScrimColor(BottomSheetDefaults.ScrimColor),
+        contentWindowInsets = { WindowInsets(0) },
         contentColor = MaterialTheme.colorScheme.onSurface,
         dragHandle = null,
         modifier = modifier.fillMaxHeight()

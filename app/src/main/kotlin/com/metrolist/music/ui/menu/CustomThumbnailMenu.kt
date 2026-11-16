@@ -5,6 +5,8 @@
 
 package com.metrolist.music.ui.menu
 
+import androidx.compose.ui.graphics.Color
+import androidx.compose.material3.ListItemDefaults
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.WindowInsets
@@ -39,6 +41,7 @@ fun CustomThumbnailMenu(
     ) {
         item {
             ListItem(
+                colors = ListItemDefaults.colors(containerColor = Color.Transparent),
                 content = {
                     Text(text = stringResource(R.string.choose_from_library))
                 },
@@ -56,6 +59,7 @@ fun CustomThumbnailMenu(
         }
         item {
             ListItem(
+                colors = ListItemDefaults.colors(containerColor = Color.Transparent),
                 content = {
                     Text(text = stringResource(R.string.remove_custom_image))
                 },

@@ -422,11 +422,9 @@ fun PlaylistEditorSheet(
         unfocusedContainerColor = Color.Transparent,
     )
 
-    ModalBottomSheet(
+    PlayerSheet(
         onDismissRequest = { if (!saving) onDismiss() },
         sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true, confirmValueChange = { !saving }),
-        shape = ErShape.SheetTop,
-        containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
     ) {
         // The sheet already keeps clear of the keyboard and navigation bar; padding for them again
         // here made the fields jump twice when focus moved from the title to the description.

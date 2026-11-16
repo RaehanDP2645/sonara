@@ -10,6 +10,8 @@
 
 package com.metrolist.music.ui.component
 
+import androidx.compose.foundation.layout.windowInsetsPadding
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.drawOutline
@@ -138,6 +140,7 @@ fun SheetHandle(modifier: Modifier = Modifier) {
  * handle. Over the player, a light line runs along the top edge, so where the sheet starts is
  * always clear even when its colour is close to the player's.
  */
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun PlayerSheetColumn(
     modifier: Modifier = Modifier,
@@ -167,8 +170,12 @@ fun PlayerSheetColumn(
                 },
             ),
     ) {
-        SheetHandle(Modifier.align(Alignment.CenterHorizontally))
-        content()
+        // The sheet passes no insets of its own (contentWindowInsets = 0): they are padded here,
+        // inside the wash, so a sheet dragged up to the status bar shows no band above it.
+        Column(Modifier.windowInsetsPadding(BottomSheetDefaults.modalWindowInsets)) {
+            SheetHandle(Modifier.align(Alignment.CenterHorizontally))
+            content()
+        }
     }
 }
 
@@ -189,6 +196,7 @@ fun PlayerSheet(
         tonalElevation = 0.dp,
         scrimColor = playerScrimColor(BottomSheetDefaults.ScrimColor),
         dragHandle = null,
+        contentWindowInsets = { WindowInsets(0) },
     ) {
         PlayerSheetColumn(content = content)
     }

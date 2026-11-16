@@ -5,6 +5,7 @@
 
 package com.metrolist.music.ui.component
 
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -76,7 +77,7 @@ fun DefaultDialog(
         properties = DialogProperties(usePlatformDefaultWidth = false),
     ) {
         Surface(
-            modifier = Modifier.padding(24.dp),
+            modifier = Modifier.padding(24.dp).widthIn(max = DialogMaxWidth),
             shape = AlertDialogDefaults.shape,
             color = playerDialogColor(AlertDialogDefaults.containerColor),
             tonalElevation = AlertDialogDefaults.TonalElevation,
@@ -203,7 +204,7 @@ fun ListDialog(
         properties = DialogProperties(usePlatformDefaultWidth = false),
     ) {
         Surface(
-            modifier = Modifier.padding(24.dp),
+            modifier = Modifier.padding(24.dp).widthIn(max = DialogMaxWidth),
             shape = AlertDialogDefaults.shape,
             color = playerDialogColor(AlertDialogDefaults.containerColor),
             tonalElevation = AlertDialogDefaults.TonalElevation,
@@ -377,3 +378,6 @@ fun TextFieldDialog(
         }
     }
 }
+
+/** Material's widest dialog; on tablets and TVs dialogs stop here instead of spanning the screen. */
+val DialogMaxWidth = 560.dp

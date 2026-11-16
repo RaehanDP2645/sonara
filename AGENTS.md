@@ -90,6 +90,27 @@ in `docs/perf.md`; never write numbers that were not measured.
   YouTube Music's web API only accepts the session cookies from that flow: an OAuth token from
   the native account chooser was tested and rejected by WEB_REMIX (HTTP 400).
 
+## Sonara TV (Android TV): the `tv` flavor
+
+Requested by the owner as an app of its own: package `com.ermusic.tv`, released as
+`TV-Sonara-<version>.apk` (never starting with "Sonara", so phones' updaters never pick it), built
+with `./gradlew :app:assembleTvRelease`. It is a product flavor of this same app, so the player
+(MusicService), library, lyrics, romanization, translator, lyrics refresh and updater are the
+phone's own code; nothing crucial may be missing on the TV compared with the phone. Only the
+screens differ, in `app/src/tv/`:
+- `TvActivity` (LEANBACK_LAUNCHER; `MainActivity` is kept but not launchable there; `AppEntry`
+  per flavor says which activity notifications and the media session open).
+- `TvRoot`: rail (Home, Search, Library, Settings), pages, the now-playing bar, Now Playing,
+  and the idle screen (spinning record with the cover, plus the lyrics) after 45 s without the
+  remote while playing. The NavHost also registers the phone's `navigationBuilder`, so album,
+  artist, playlist, radio, search results and the full settings are the phone's pages.
+- Focus is drawn by `tvFocusable` (bigger, light outline). Crossfade is on (5 s) by default on
+  the TV only (`CrossfadeEnabledDefault`).
+- Sign-in: a QR code and a rotating 6-digit code for Sonara on a phone (Settings > Sign in on a
+  TV, `TvLinkScreen`), relayed by the proxy (`/api/tv/start|poll|lookup|deliver`) and sealed for
+  the TV alone (`tvlink/TvLink.kt`: ECDH P-256, HKDF-SHA256, AES-256-GCM); or Google's own
+  sign-in typed on the TV (`LoginSheet`). The TV polls every 5 s (the proxy allows 120 per 10 min).
+
 ## Desktop app (`desktop/`): Windows, macOS, Linux
 
 A Compose Desktop build of its own (`./gradlew -p desktop run`, `./gradlew -p desktop packageInstaller`),

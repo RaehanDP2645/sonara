@@ -145,6 +145,9 @@ val ShufflePlaylistFirstKey = booleanPreferencesKey("shufflePlaylistFirst")
 val SmartShuffleKey = booleanPreferencesKey("smartShuffle")
 val PreventDuplicateTracksInQueueKey = booleanPreferencesKey("preventDuplicateTracksInQueue")
 val CrossfadeEnabledKey = booleanPreferencesKey("crossfadeEnabled")
+
+/** Crossfade is off by default on a phone and on (5 seconds) on Sonara TV, the owner's choice. */
+val CrossfadeEnabledDefault: Boolean get() = com.metrolist.music.BuildConfig.IS_TV
 val CrossfadeDurationKey = floatPreferencesKey("crossfadeDurationFloat")
 val CrossfadeGaplessKey = booleanPreferencesKey("crossfadeGapless")
 

@@ -921,6 +921,27 @@ class MainActivity : FragmentActivity() {
                                                     )
                                                 }
                                             }
+                                            // Home only, asked for by the owner: a shortcut to the Browse tab,
+                                            // where search lives (no search of its own here), switched to as
+                                            // the tab bar or rail would.
+                                            if (currentRoute == Screens.Home.route) {
+                                                IconButton(
+                                                    onClick = {
+                                                        navController.navigate(Screens.Search.route) {
+                                                            popUpTo(navController.graph.startDestinationId) {
+                                                                saveState = true
+                                                            }
+                                                            launchSingleTop = true
+                                                            restoreState = true
+                                                        }
+                                                    },
+                                                ) {
+                                                    Icon(
+                                                        painter = painterResource(R.drawable.search),
+                                                        contentDescription = stringResource(R.string.er_browse),
+                                                    )
+                                                }
+                                            }
                                             IconButton(
                                                 onClick = { navController.navigate("settings") },
                                                 modifier = Modifier.testTag("open_settings"),
@@ -1360,6 +1381,12 @@ class MainActivity : FragmentActivity() {
         val focus = { route: String ->
             collapsePlayerForIntent?.invoke()
             navController.navigate(route) { launchSingleTop = true }
+        }
+
+        // Sonara TV's QR page ("Open in Sonara") or its link: sign that TV in.
+        com.metrolist.music.tvlink.TvLink.sessionFrom(uri.toString())?.let { session ->
+            focus("tv_link?session=$session")
+            return
         }
 
         when (val path = uri.pathSegments.firstOrNull()) {

@@ -5,6 +5,8 @@
 
 package com.metrolist.music.ui.menu
 
+import androidx.compose.ui.graphics.Color
+import androidx.compose.material3.ListItemDefaults
 import com.metrolist.music.utils.ShareItem
 import com.metrolist.music.utils.ShareCard
 import com.metrolist.music.ui.screens.playlist.songRadioRoute
@@ -188,6 +190,8 @@ fun YouTubeSongMenu(
     }  
 
     ListItem(  
+
+        colors = ListItemDefaults.colors(containerColor = Color.Transparent),
         content = {
             Text(
                 text = song.title,

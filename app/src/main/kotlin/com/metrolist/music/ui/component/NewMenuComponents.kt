@@ -5,6 +5,8 @@
 
 package com.metrolist.music.ui.component
 
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.background
 import androidx.compose.ui.draw.clip
 import androidx.compose.animation.animateColorAsState
@@ -99,61 +101,94 @@ private fun NewActionButton(
                 style = MaterialTheme.typography.labelMedium,
                 color = animatedContent,
                 textAlign = TextAlign.Center,
+                // Two lines rather than a marquee, which cut words off ("o playlist").
                 maxLines = 2,
                 overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.basicMarquee(),
             )
         }
     }
 }
 
+/**
+ * The menu's main actions as cards, one row of at most [columns]; any more go under them as
+ * plain rows, like the menu's other items, so a menu never shows a lone card on a second row.
+ * The cards are a see-through tint of the text colour, so on a sheet in the song's colour
+ * (PlayerSheet) they take that colour too instead of standing out in grey.
+ */
 @Composable
 fun NewActionGrid(
     actions: List<NewAction>,
     modifier: Modifier = Modifier,
     columns: Int = 3,
 ) {
-    val rows = actions.chunked(columns)
+    val cards = actions.take(columns)
+    val rest = actions.drop(columns)
 
     Column(
         modifier = modifier,
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        rows.forEach { row ->
-            Row(
-                horizontalArrangement = Arrangement.spacedBy(12.dp),
-            ) {
-                row.forEach { action ->
-                    NewActionButton(
-                        icon = action.icon,
-                        text = action.text,
-                        onClick = action.onClick,
-                        modifier = Modifier.weight(1f),
-                        enabled = action.enabled,
-                        backgroundColor =
-                            if (action.backgroundColor !=
-                                Color.Unspecified
-                            ) {
-                                action.backgroundColor
-                            } else {
-                                MaterialTheme.colorScheme.surfaceContainerHighest
-                            },
-                        contentColor =
-                            if (action.contentColor !=
-                                Color.Unspecified
-                            ) {
-                                action.contentColor
-                            } else {
-                                MaterialTheme.colorScheme.onSurfaceVariant
-                            },
-                    )
-                }
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            cards.forEach { action ->
+                NewActionButton(
+                    icon = action.icon,
+                    text = action.text,
+                    onClick = action.onClick,
+                    modifier = Modifier.weight(1f),
+                    enabled = action.enabled,
+                    backgroundColor =
+                        if (action.backgroundColor != Color.Unspecified) {
+                            action.backgroundColor
+                        } else {
+                            MaterialTheme.colorScheme.onSurface.copy(alpha = CARD_TINT_ALPHA)
+                        },
+                    contentColor =
+                        if (action.contentColor != Color.Unspecified) {
+                            action.contentColor
+                        } else {
+                            MaterialTheme.colorScheme.onSurfaceVariant
+                        },
+                )
+            }
 
-                repeat(columns - row.size) {
-                    Spacer(modifier = Modifier.weight(1f))
-                }
+            repeat(columns - cards.size) {
+                Spacer(modifier = Modifier.weight(1f))
             }
         }
+        if (rest.isNotEmpty()) {
+            Column {
+                rest.forEach { action -> NewActionRow(action) }
+            }
+        }
+    }
+}
+
+/** How strongly an action card tints the sheet under it. */
+private const val CARD_TINT_ALPHA = 0.07f
+
+/** An action past the cards, as a plain row lined up with the menu's other rows. */
+@Composable
+private fun NewActionRow(action: NewAction) {
+    var performAction by remember { mutableStateOf(false) }
+    if (performAction) {
+        action.onClick()
+        LaunchedEffect(Unit) { performAction = false }
+    }
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier =
+            Modifier
+                .fillMaxWidth()
+                .clickable(enabled = action.enabled) { performAction = true }
+                .heightIn(min = 52.dp)
+                // The grid sits 4dp in; rows of the menu start 24dp in.
+                .padding(horizontal = 20.dp, vertical = 8.dp),
+    ) {
+        Box(Modifier.size(28.dp), contentAlignment = Alignment.Center) { action.icon() }
+        Spacer(Modifier.width(16.dp))
+        Text(action.text, style = MaterialTheme.typography.bodyLarge, maxLines = 1, overflow = TextOverflow.Ellipsis)
     }
 }
 

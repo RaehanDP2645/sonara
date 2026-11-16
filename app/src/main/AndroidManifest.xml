@@ -93,6 +93,24 @@
                 <data android:pathPrefix="/search" />
             </intent-filter>
 
+            <!-- Sonara TV's sign-in code: its QR page and that page's "Open in Sonara" button. -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+
+                <data android:scheme="sonara" android:host="tv" />
+            </intent-filter>
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+
+                <data android:scheme="https" android:host="sonara.rashiiddsr.my.id" android:pathPrefix="/tv" />
+            </intent-filter>
+
             <!-- Share filter -->
             <intent-filter>
                 <action android:name="android.intent.action.SEND" />

@@ -188,6 +188,13 @@ fun SettingsScreen(navController: NavController) {
                     description = accountEmail.takeIf { isLoggedIn && it.isNotBlank() }?.let { email -> { Text(email) } },
                     onClick = { navController.navigate(if (isLoggedIn) "settings/account" else "login") },
                 ),
+                // Sends this phone's sign-in to Sonara TV (scan its code or type it).
+                Material3SettingsItem(
+                    visible = isLoggedIn && !com.metrolist.music.BuildConfig.IS_TV,
+                    icon = painterResource(R.drawable.tv),
+                    title = { Text(stringResource(R.string.er_tv_sign_in)) },
+                    onClick = { navController.navigate("tv_link") },
+                ),
             ),
         )
 

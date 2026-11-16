@@ -308,6 +308,14 @@ fun NavGraphBuilder.navigationBuilder(
         AboutScreen(navController)
     }
 
+    // Sign in on a TV (Settings, or the TV page's "Open in Sonara" link with its session).
+    composable(
+        route = "tv_link?session={session}",
+        arguments = listOf(navArgument("session") { type = NavType.StringType; nullable = true; defaultValue = null }),
+    ) { backStackEntry ->
+        com.metrolist.music.ui.screens.settings.TvLinkScreen(navController, backStackEntry.arguments?.getString("session"))
+    }
+
     // Sign-in opens as a popup over the current screen instead of a full-screen page.
     dialog("login", dialogProperties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)) {
         LoginScreen(navController)

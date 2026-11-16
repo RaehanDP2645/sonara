@@ -15,9 +15,10 @@ import androidx.compose.ui.unit.dp
 
 /**
  * How much room the window gives, for layouts that change on tablets. Phones are always
- * [WindowWidth.Compact] and portrait (MainActivity locks them). A tablet held upright works like
- * a phone (bottom navigation, the phone player); only a tablet in landscape
- * ([tabletLandscape]) gets the rail, centred pages, the side-panel player and two-pane pages.
+ * [WindowWidth.Compact] and portrait (MainActivity locks them). Every tablet navigates with the
+ * rail, upright or not (MainActivity: wide or landscape); held upright it keeps the phone player,
+ * and only in landscape ([tabletLandscape]) does it get centred pages, the side-panel player and
+ * two-pane pages.
  * Breakpoints follow Material's window size classes (600dp and 840dp).
  */
 @Immutable

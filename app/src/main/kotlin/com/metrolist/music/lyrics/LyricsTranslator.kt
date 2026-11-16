@@ -332,7 +332,7 @@ object LyricsTranslator {
     private fun ByteArray.toHex(): String = joinToString("") { "%02x".format(it) }
 
     /** A random id for this install, made once: the proxy limits requests per install with it. */
-    private fun installId(context: Context): String {
+    internal fun installId(context: Context): String {
         val prefs = context.getSharedPreferences("sonara_install", Context.MODE_PRIVATE)
         prefs.getString("id", null)?.let { return it }
         return UUID.randomUUID().toString().also { id -> prefs.edit { putString("id", id) } }

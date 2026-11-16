@@ -95,9 +95,16 @@ object AppUpdater {
 
     val currentVersion: String get() = BuildConfig.VERSION_NAME.substringBefore('+')
 
+    /**
+     * This app's APK in [release]: Sonara-<version>.apk for the phone, TV-Sonara-<version>.apk
+     * for Sonara TV. The TV's file never starts with "Sonara", so phones from before Sonara TV,
+     * which take the first APK named Sonara..., never pick it.
+     */
     fun apkOf(release: Release): ReleaseAsset? =
-        release.assets.firstOrNull { it.name.endsWith(".apk", ignoreCase = true) && it.name.startsWith("Sonara", ignoreCase = true) }
-            ?: release.assets.firstOrNull { it.name.endsWith(".apk", ignoreCase = true) }
+        release.assets.firstOrNull { asset ->
+            asset.name.endsWith(".apk", ignoreCase = true) &&
+                asset.name.startsWith(if (BuildConfig.IS_TV) "TV-Sonara" else "Sonara", ignoreCase = true)
+        }
 
     /**
      * Looks the newest release up: the newer release, or null when this is the newest; a

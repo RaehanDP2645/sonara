@@ -5,6 +5,8 @@
 
 package com.metrolist.music.ui.menu
 
+import androidx.compose.ui.graphics.Color
+import androidx.compose.material3.ListItemDefaults
 import com.metrolist.music.utils.ShareItem
 import com.metrolist.music.utils.ShareCard
 import android.annotation.SuppressLint
@@ -167,6 +169,7 @@ fun YouTubeAlbumMenu(
         ) {
             item {
                 ListItem(
+                    colors = ListItemDefaults.colors(containerColor = Color.Transparent),
                     content = { Text(text = stringResource(R.string.already_in_playlist)) },
                     leadingContent = {
                         Image(

@@ -797,7 +797,11 @@ fun ExperimentalLyrics(
             isSelectionModeActive = isSelectionModeActive, anySelected = selectedIndices.isNotEmpty(),
             onCancelSelection = { isSelectionModeActive = false; selectedIndices.clear() },
             onShareSelection = {
-                val text = selectedIndices.sorted().mapNotNull { lines.getOrNull(it)?.text }.joinToString("\n")
+                // As the lyrics show them: with "Latin only", the lines in Latin letters.
+                val text =
+                    selectedIndices.sorted().mapNotNull { lines.getOrNull(it)?.text }.joinToString("\n") { line ->
+                        if (latinOnly) romanizations[line.trim()] ?: line else line
+                    }
                 if (text.isNotBlank()) {
                     shareLyricsImage(text, mediaMetadata?.title ?: "", cardArtists(context, mediaMetadata?.artists?.map { it.name }.orEmpty()))
                 }

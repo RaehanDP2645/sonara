@@ -87,8 +87,8 @@ android {
         applicationId = applicationIdOverride ?: baseApplicationId
         minSdk = 26
         targetSdk = 36
-        versionCode = 2028
-        versionName = "2.5.2"
+        versionCode = 2029
+        versionName = "2.6.0"
         val baseVersionName = requireNotNull(versionName)
         buildConfigField("String", "BASE_VERSION_NAME", "\"$baseVersionName\"")
         buildCommit?.let { versionName = "$baseVersionName+$it" }
@@ -115,6 +115,18 @@ android {
             isDefault = true
             buildConfigField("Boolean", "CAST_AVAILABLE", "false")
             buildConfigField("Boolean", "UPDATER_AVAILABLE", "false")
+            buildConfigField("Boolean", "IS_TV", "false")
+        }
+        // Sonara TV (requested by the owner): an app of its own for Android TV, made from this same
+        // code (player, library, lyrics, translator, updater) with its own remote-first screens in
+        // src/tv/. Released as TV-Sonara-<version>.apk next to the phone's APK.
+        create("tv") {
+            dimension = "variant"
+            applicationId = "com.ermusic.tv"
+            buildConfigField("Boolean", "CAST_AVAILABLE", "false")
+            buildConfigField("Boolean", "UPDATER_AVAILABLE", "false")
+            buildConfigField("Boolean", "IS_TV", "true")
+            resValue("string", "app_name", "Sonara TV")
         }
     }
 
@@ -342,6 +354,9 @@ dependencies {
 
     // Lyrics romanization on the device (lyrics/LyricsRomanizer.kt): Japanese readings.
     implementation(libs.kuromoji.ipadic)
+    // Signing in on a TV: the TV draws a QR code (core), the phone scans it (embedded scanner).
+    implementation(libs.zxing.core)
+    implementation(libs.zxing.embedded)
 
     implementation(libs.profileinstaller)
     "baselineProfile"(project(":baselineprofile"))

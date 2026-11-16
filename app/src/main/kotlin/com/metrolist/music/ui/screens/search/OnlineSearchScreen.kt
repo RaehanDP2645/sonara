@@ -406,7 +406,7 @@ fun OnlineSearchScreen(
                                         }
                                     }
                                 },
-                            ).background(if (pureBlack) Color.Black else MaterialTheme.colorScheme.surface)
+                            ).appBackdrop(pureBlack)
                             .animateItem(),
                 )
             }
@@ -724,7 +724,7 @@ fun OnlineSearchScreen(
                                     }
                                 }
                             },
-                        ).background(if (pureBlack) Color.Black else MaterialTheme.colorScheme.surface)
+                        ).appBackdrop(pureBlack)
                         .animateItem(),
             )
         }
@@ -747,7 +747,7 @@ fun SuggestionItem(
             modifier
                 .fillMaxWidth()
                 .height(SuggestionItemHeight)
-                .background(if (pureBlack) Color.Black else MaterialTheme.colorScheme.surface)
+                .appBackdrop(pureBlack)
                 .clickable(onClick = onClick)
                 .windowInsetsPadding(WindowInsets.systemBars.only(WindowInsetsSides.Horizontal)),
     ) {
