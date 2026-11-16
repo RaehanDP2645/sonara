@@ -150,6 +150,7 @@ fun ExperimentalLyrics(
     modifier: Modifier = Modifier,
     showLyrics: Boolean,
     translations: Map<String, String> = emptyMap(),
+    romanizations: Map<String, String> = emptyMap(),
     lyricsViewModel: LyricsViewModel = hiltViewModel()
 ) {
     val playerConnection = LocalPlayerConnection.current ?: return
@@ -727,6 +728,7 @@ fun ExperimentalLyrics(
                                     LyricsLine(
                                         index = index, item = item, isSynced = isSynced,
                                         translation = translations[item.text.trim()],
+                                        romanized = romanizations[item.text.trim()],
                                         isActiveLine = isActiveLine,
                                         bgVisible = bgVisible, isSelected = selectedIndices.contains(index),
                                         isSelectionModeActive = isSelectionModeActive, currentPositionState = currentPositionState,

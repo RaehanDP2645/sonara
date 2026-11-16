@@ -19,6 +19,7 @@ fun Lyrics(
     modifier: Modifier = Modifier,
     showLyrics: Boolean,
     translations: Map<String, String> = emptyMap(),
+    romanizations: Map<String, String> = emptyMap(),
     lyricsViewModel: LyricsViewModel = hiltViewModel()
 ) {
     val (experimentalLyrics, _) = rememberPreference(key = ExperimentalLyricsKey, defaultValue = true)
@@ -29,6 +30,7 @@ fun Lyrics(
             modifier = modifier,
             showLyrics = showLyrics,
             translations = translations,
+            romanizations = romanizations,
             lyricsViewModel = lyricsViewModel
         )
     } else {

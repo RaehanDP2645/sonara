@@ -398,6 +398,18 @@ val ExperimentalLyricsKey = booleanPreferencesKey("experimentalLyrics")
 /** AI translator (Settings): every lyric line gets a translation under it, see LyricsTranslator. */
 val LyricsTranslateKey = booleanPreferencesKey("lyricsTranslate")
 
+/** Built-in updater (About): offer new versions by themselves; on by default. */
+val UpdateNotifyKey = booleanPreferencesKey("updateNotify")
+
+/** A version the user chose not to be offered again ("Don't show again"). */
+val UpdateSkippedVersionKey = stringPreferencesKey("updateSkippedVersion")
+
+/** When GitHub was last asked for the newest release: once a day at most, by itself. */
+val UpdateLastCheckKey = longPreferencesKey("updateLastCheck")
+
+/** Lyrics in Latin letters under lines in another script (Settings), see LyricsRomanizer; on by default. */
+val LyricsRomanizeKey = booleanPreferencesKey("lyricsRomanize")
+
 /** The language lyrics are translated into; English by default. */
 val LyricsTranslateLanguageKey = stringPreferencesKey("lyricsTranslateLanguage")
 

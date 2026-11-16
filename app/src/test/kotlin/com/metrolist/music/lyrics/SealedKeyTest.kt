@@ -13,7 +13,7 @@ import org.junit.Test
 import java.io.File
 import java.util.Properties
 
-/** The built-in sealed key opens, and to exactly the key in local.properties when one is there. */
+/** The built-in sealed client secret (translation proxy) opens, and to exactly the one in local.properties when one is there. */
 class SealedKeyTest {
     private companion object {
         const val MIN_KEY_LENGTH = 20
@@ -22,18 +22,18 @@ class SealedKeyTest {
     private val expected: String? =
         listOf(File("local.properties"), File("../local.properties"))
             .firstOrNull(File::isFile)
-            ?.let { file -> Properties().apply { file.inputStream().use(::load) }.getProperty("SONARA_AI_KEY")?.trim() }
+            ?.let { file -> Properties().apply { file.inputStream().use(::load) }.getProperty("SONARA_API_SECRET")?.trim() }
             ?.takeIf { it.isNotEmpty() }
-            ?: System.getenv("SONARA_AI_KEY")?.trim()?.takeIf { it.isNotEmpty() }
+            ?: System.getenv("SONARA_API_SECRET")?.trim()?.takeIf { it.isNotEmpty() }
 
     @Test
     fun sealedKeyOpensToTheOwnersKey() {
-        val opened = SealedKey.open(BuildConfig.AI_TRANSLATE_KEY_SEALED)
+        val opened = SealedKey.open(BuildConfig.SONARA_API_SECRET_SEALED)
         assertTrue("the built-in key opens", opened.length > MIN_KEY_LENGTH)
         if (expected != null) {
             // Compared without printing either value.
             assertTrue("the sealed key opens to the configured one", opened == expected)
-            assertFalse("the build holds no readable copy", BuildConfig.AI_TRANSLATE_KEY_SEALED.contains(expected))
+            assertFalse("the build holds no readable copy", BuildConfig.SONARA_API_SECRET_SEALED.contains(expected))
         }
     }
 

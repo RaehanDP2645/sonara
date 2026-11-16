@@ -13,6 +13,7 @@ import java.awt.Frame
 import java.awt.FileDialog
 import com.ermusic.desktop.window.Uninstall
 import com.ermusic.desktop.window.DataChoice
+import com.ermusic.desktop.BuildSecrets
 import com.ermusic.desktop.data.Backup
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.TextButton
@@ -43,6 +44,8 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableLongStateOf
+import androidx.compose.runtime.rememberCoroutineScope
+import com.ermusic.desktop.update.DesktopUpdater
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -154,11 +157,12 @@ fun SettingsScreen(app: AppState) {
             item(key = "content", contentType = "group") {
                 Group("Content") {
                     SwitchRow("Hide explicit content", "Leaves out songs and albums marked explicit.", Settings.hideExplicit)
-                    SwitchRow("Hide music videos", "Shows songs only.", Settings.hideVideos)
+                    SwitchRow("Hide music videos", "Shows songs only, and skips music videos in the queue.", Settings.hideVideos)
                 }
             }
             item(key = "lyrics", contentType = "group") {
                 Group("Lyrics") {
+                    SwitchRow("Romanization", "Lyrics in Japanese, Korean, Chinese and other scripts also in Latin letters.", Settings.romanize)
                     SwitchRow("AI translator", "Translates lyrics as soon as they load.", Settings.translator)
                     if (Settings.translator.value) {
                         ChoiceRow("Translate into", null, LyricsTranslator.languages, Settings.translateLanguage.value, Modifier.height(MENU_HEIGHT)) { Settings.translateLanguage.value = it }
@@ -234,9 +238,35 @@ fun SettingsScreen(app: AppState) {
                     Text("Sonara $APP_VERSION for ${Os.name}", style = MaterialTheme.typography.titleSmall)
                     Spacer(Modifier.height(Spacing.XS))
                     Text("Free software under GPL-3.0, derived from Metrolist.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Spacer(Modifier.height(Spacing.M))
+                    UpdateRow()
+                    SwitchRow("Tell me about new versions", "Shows a message when an update is out.", Settings.updateNotify)
                 }
             }
         }
+    }
+}
+
+/** Asks GitHub for the newest release now; a newer one opens the update dialog, even one skipped earlier. */
+@Composable
+private fun UpdateRow() {
+    val scope = rememberCoroutineScope()
+    var status by remember { mutableStateOf<String?>(null) }
+    SettingRow("Check for updates", status) {
+        OutlinedButton(
+            onClick = {
+                status = "Checking…"
+                scope.launch {
+                    DesktopUpdater.check()
+                        .onSuccess { release ->
+                            status = release?.let { "Version ${it.version} is available" } ?: "You have the newest version"
+                            release?.let { DesktopUpdater.prompt = it }
+                        }.onFailure { status = "Couldn't check. Try again later." }
+                }
+            },
+            enabled = status != "Checking…",
+            modifier = Modifier.handCursor(),
+        ) { Text("Check") }
     }
 }
 
@@ -262,8 +292,8 @@ private fun EqualizerControls() {
 }
 
 private val EQ_SLIDER_HEIGHT = 140.dp
-/** Bumped with appVersion in build.gradle.kts for every installer. */
-private const val APP_VERSION = "2.4.2"
+/** appVersion in build.gradle.kts, bumped for every installer. */
+private const val APP_VERSION = BuildSecrets.APP_VERSION
 private const val BYTES_PER_MB = 1_048_576.0
 private const val MB_PER_GB = 1024
 private const val MAX_CROSSFADE = 12

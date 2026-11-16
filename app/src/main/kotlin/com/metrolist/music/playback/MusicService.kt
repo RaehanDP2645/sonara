@@ -2599,6 +2599,8 @@ class MusicService :
         mediaItem: MediaItem?,
         reason: Int,
     ) {
+        // The song it moves on to (by itself, or with Next or Previous) does the rest.
+        if (skipHiddenVideo(mediaItem, reason)) return
         prefetchNextStream()
         mediaItem?.mediaId?.let(::scheduleYouTubeHistory)
 
@@ -2676,6 +2678,47 @@ class MusicService :
         if (cachedPersistentQueue) {
             saveQueueToDisk()
         }
+    }
+
+    /**
+     * "Hide music videos" (Settings, off by default): a music video the queue reaches, by itself
+     * or with Next or Previous, is skipped, onward in the direction it was going, to the next
+     * item that is not one; with none left, playback pauses. A video the user started a queue
+     * with (a new queue) still plays. Returns whether it skipped.
+     */
+    private fun skipHiddenVideo(
+        mediaItem: MediaItem?,
+        reason: Int,
+    ): Boolean {
+        if (!cachedHideVideoSongs || mediaItem?.metadata?.isVideoSong != true) return false
+        if (reason != Player.MEDIA_ITEM_TRANSITION_REASON_AUTO && reason != Player.MEDIA_ITEM_TRANSITION_REASON_SEEK) return false
+        val from = player.currentMediaItemIndex
+        val backwards =
+            reason == Player.MEDIA_ITEM_TRANSITION_REASON_SEEK &&
+                previousMediaItemIndex != C.INDEX_UNSET &&
+                player.currentTimeline.getPreviousWindowIndex(previousMediaItemIndex, REPEAT_MODE_OFF, player.shuffleModeEnabled) == from
+        val timeline = player.currentTimeline
+        var index = from
+        repeat(player.mediaItemCount) {
+            index =
+                if (backwards) {
+                    timeline.getPreviousWindowIndex(index, REPEAT_MODE_OFF, player.shuffleModeEnabled)
+                } else {
+                    timeline.getNextWindowIndex(index, REPEAT_MODE_OFF, player.shuffleModeEnabled)
+                }
+            if (index == C.INDEX_UNSET) {
+                Timber.tag(TAG).d("Hidden music video ${mediaItem.mediaId} with nothing after it, pausing")
+                player.pause()
+                return true
+            }
+            if (player.getMediaItemAt(index).metadata?.isVideoSong != true) {
+                Timber.tag(TAG).d("Skipping hidden music video ${mediaItem.mediaId}")
+                player.seekTo(index, 0)
+                return true
+            }
+        }
+        player.pause()
+        return true
     }
 
     /**

@@ -41,6 +41,21 @@ object Settings {
     }
 
     val translator = Pref("translator", false, String::toBoolean)
+
+    /** Built-in updater (Settings, About): offer new versions by themselves. */
+    val updateNotify = Pref("update_notify", true, String::toBoolean)
+
+    /** A version the user chose not to be offered again ("Don't show again"). */
+    val updateSkipped = Pref("update_skipped", "") { it }
+
+    /** When GitHub was last asked for the newest release: once a day at most, by itself. */
+    val updateLastCheck = Pref("update_last_check", 0L) { it.toLongOrNull() ?: 0L }
+
+    /** A random id made once: the translation proxy limits requests per install with it. */
+    val installId = Pref("install_id", "") { it }
+
+    /** Lyrics in another script also in Latin letters (LyricsRomanizer, shared with the phone). */
+    val romanize = Pref("romanize", true, String::toBoolean)
     val translateLanguage = Pref("translate_language", "en") { it }
     val normalize = Pref("normalize", true, String::toBoolean)
     val highQuality = Pref("high_quality", true, String::toBoolean)

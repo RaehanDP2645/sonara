@@ -108,6 +108,7 @@ import com.ermusic.desktop.playback.LyricLine
 import com.ermusic.desktop.playback.LyricWord
 import com.ermusic.desktop.playback.LyricsRepository
 import com.ermusic.desktop.playback.LyricsTranslator
+import com.metrolist.music.lyrics.LyricsRomanizer
 import com.ermusic.desktop.playback.Player
 import com.ermusic.desktop.playback.PlayerState
 import com.ermusic.desktop.playback.Repeat
@@ -420,7 +421,7 @@ private fun WordSyncedLine(words: List<LyricWord>, style: TextStyle, position: S
 }
 
 @Composable
-private fun LyricRow(line: LyricLine, translation: String?, distance: Int, synced: Boolean, position: State<Long>, large: Boolean, centered: Boolean, onSeek: () -> Unit) {
+private fun LyricRow(line: LyricLine, translation: String?, romanized: String?, distance: Int, synced: Boolean, position: State<Long>, large: Boolean, centered: Boolean, onSeek: () -> Unit) {
     val active = distance == 0
     val alpha by animateFloatAsState(
         when {
@@ -454,6 +455,10 @@ private fun LyricRow(line: LyricLine, translation: String?, distance: Int, synce
             WordSyncedLine(line.words, style, position, centered)
         } else {
             Text(line.text, style = style.copy(color = MaterialTheme.colorScheme.onSurface))
+        }
+        // The line in Latin letters, right under it: read while singing.
+        if (romanized != null) {
+            Text(romanized, style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Normal, textAlign = align), color = MaterialTheme.colorScheme.onSurface.copy(alpha = ROMANIZED_ALPHA))
         }
         if (LyricsTranslator.shouldShow(line.text, translation)) {
             Spacer(Modifier.height(Spacing.XS))
@@ -499,6 +504,11 @@ private fun FoundLyrics(lyrics: Lyrics, player: Player, track: Track, modifier: 
     val translations by produceState(emptyMap<String, String>(), track.id, lyrics, translateOn, language) {
         value = emptyMap()
         if (translateOn) value = LyricsTranslator.translate(track.id, lyrics.lines.map { it.text }, language)
+    }
+    val romanizeOn = Settings.romanize.value
+    val romanizations by produceState(emptyMap<String, String>(), lyrics, romanizeOn) {
+        value = emptyMap()
+        if (romanizeOn) value = runCatching { LyricsRomanizer.romanize(lyrics.lines.map { it.text }) }.getOrDefault(emptyMap())
     }
     // All of it belongs to these lyrics: a new song starts at the top, not where the last one
     // ended, even when its lyrics were ready and the page never showed "loading" in between.
@@ -549,6 +559,7 @@ private fun FoundLyrics(lyrics: Lyrics, player: Player, track: Track, modifier: 
                 LyricRow(
                     line,
                     translations[line.text.trim()],
+                    romanizations[line.text.trim()],
                     distance = if (active < 0) index + 1 else kotlin.math.abs(index - active),
                     synced = lyrics.synced,
                     position = position,
@@ -845,6 +856,7 @@ private val VOLUME_WIDTH = 100.dp
 private const val MS_PER_MINUTE = 60_000L
 private val SLEEP_MINUTES = listOf(5, 10, 15, 30, 45, 60, 90)
 private const val PANEL_ALPHA = 0.7f
+private const val ROMANIZED_ALPHA = 0.72f
 private const val UNSUNG_WORD_ALPHA = 0.42f
 private const val WORD_FILL_EDGE = 0.18f
 private const val NEAR_LINE_ALPHA = 0.5f

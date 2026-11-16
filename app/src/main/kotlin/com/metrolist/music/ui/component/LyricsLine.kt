@@ -90,6 +90,7 @@ internal fun LyricsLine(
     isSynced: Boolean,
     translation: String?,
     isActiveLine: Boolean,
+    romanized: String? = null,
     bgVisible: Boolean,
     isSelected: Boolean,
     isSelectionModeActive: Boolean,
@@ -245,6 +246,20 @@ internal fun LyricsLine(
                         text = mainText,
                         style = lyricStyle.copy(color = if (isActiveLine) expressiveAccent else lineColor),
                         modifier = Modifier.fillMaxWidth()
+                    )
+                }
+                // The line in Latin letters (romanization), right under it: read while singing.
+                if (romanized != null) {
+                    Text(
+                        text = romanized,
+                        style = lyricStyle.copy(
+                            fontSize = (lyricStyle.fontSize.value * ROMANIZED_SCALE).sp,
+                            lineHeight = (lyricStyle.fontSize.value * ROMANIZED_SCALE * lyricsLineSpacing).sp,
+                            fontWeight = FontWeight.Normal,
+                            letterSpacing = 0.sp,
+                            color = expressiveAccent.copy(alpha = animatedAlpha * ROMANIZED_ALPHA),
+                        ),
+                        modifier = Modifier.fillMaxWidth().padding(top = 2.dp)
                     )
                 }
                 // The translation, smaller and dimmer, under the line; hidden when it says the
@@ -448,3 +463,5 @@ private fun easeOut(x: Float) = 1f - (1f - x).let { it * it * it }
 
 private const val TRANSLATION_SCALE = 0.62f
 private const val TRANSLATION_ALPHA = 0.75f
+private const val ROMANIZED_SCALE = 0.66f
+private const val ROMANIZED_ALPHA = 0.7f

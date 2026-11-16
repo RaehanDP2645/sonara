@@ -81,8 +81,10 @@ import com.metrolist.music.constants.CrossfadeEnabledKey
 import com.metrolist.music.constants.DarkModeKey
 import com.metrolist.music.constants.DownloadQualityKey
 import com.metrolist.music.constants.HideExplicitKey
+import com.metrolist.music.constants.HideVideoSongsKey
 import com.metrolist.music.constants.InnerTubeCookieKey
 import com.metrolist.music.constants.LyricsTranslateKey
+import com.metrolist.music.constants.LyricsRomanizeKey
 import com.metrolist.music.constants.LyricsTranslateLanguageKey
 import com.metrolist.music.constants.WifiOnlyDownloadsKey
 import com.metrolist.music.extensions.tryOrNull
@@ -123,12 +125,14 @@ fun SettingsScreen(navController: NavController) {
     val (mono, onMono) = rememberPreference(MonoAudioKey, false)
     val (autoplay, onAutoplay) = rememberPreference(AutoRadioQueueKey, true)
     val (hideExplicit, onHideExplicit) = rememberPreference(HideExplicitKey, false)
+    val (hideVideos, onHideVideos) = rememberPreference(HideVideoSongsKey, false)
     val (streamQuality, onStreamQuality) = rememberEnumPreference(AudioQualityKey, AudioQuality.AUTO)
     val (downloadQuality, onDownloadQuality) = rememberEnumPreference(DownloadQualityKey, AudioQuality.AUTO)
     val (wifiOnly, onWifiOnly) = rememberPreference(WifiOnlyDownloadsKey, true)
     val (darkMode, onDarkMode) = rememberEnumPreference(DarkModeKey, DarkMode.AUTO)
     val themeMenu = remember { mutableStateOf(false) }
     val (aiTranslate, onAiTranslate) = rememberPreference(LyricsTranslateKey, false)
+    val (romanize, onRomanize) = rememberPreference(LyricsRomanizeKey, true)
     val (translateTo, onTranslateTo) = rememberPreference(LyricsTranslateLanguageKey, LyricsTranslator.DEFAULT_LANGUAGE)
     val translateMenu = remember { mutableStateOf(false) }
 
@@ -209,11 +213,18 @@ fun SettingsScreen(navController: NavController) {
             ),
         )
 
-        // AI translator: off by default; once on, every song's lyrics get a translation under
-        // each line, in the language chosen below (English unless changed).
+        // Romanization (on by default) and the AI translator (off by default; once on, every
+        // song's lyrics get a translation under each line, in the language chosen below).
         Material3SettingsGroup(
             title = stringResource(R.string.er_settings_lyrics),
             items = listOf(
+                Material3SettingsItem(
+                    icon = painterResource(R.drawable.language),
+                    title = { Text(stringResource(R.string.er_romanize_lyrics)) },
+                    description = { Text(stringResource(R.string.er_romanize_lyrics_desc)) },
+                    trailingContent = { Switch(checked = romanize, onCheckedChange = onRomanize) },
+                    onClick = { onRomanize(!romanize) },
+                ),
                 Material3SettingsItem(
                     icon = painterResource(R.drawable.translate),
                     title = { Text(stringResource(R.string.er_ai_translator)) },
@@ -278,6 +289,8 @@ fun SettingsScreen(navController: NavController) {
                 add(switchItem(R.string.er_mono_audio, mono, onMono))
                 add(switchItem(R.string.er_autoplay, autoplay, onAutoplay))
                 add(switchItem(R.string.er_hide_explicit, hideExplicit, onHideExplicit))
+                // Off by default: songs only, and music videos that reach the queue are skipped.
+                add(switchItem(R.string.er_hide_videos, hideVideos, onHideVideos))
                 add(
                     Material3SettingsItem(
                         title = { Text(stringResource(R.string.er_equalizer)) },

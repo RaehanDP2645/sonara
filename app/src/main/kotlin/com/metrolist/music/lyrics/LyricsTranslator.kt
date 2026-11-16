@@ -2,17 +2,19 @@
  * Sonara (C) 2026, derived from Metrolist
  * Licensed under GPL-3.0 | See git history for contributors
  *
- * Experiment requested by the owner: AI translation of lyrics. The owner's key is built in from
- * local.properties, sealed so the app holds no readable copy (SONARA_AI_KEY, optional SONARA_AI_BASE_URL, SONARA_AI_MODEL and
- * SONARA_AI_FALLBACK_MODELS; users are never asked for one), for an OpenAI-compatible chat
- * endpoint, Gemini by default. When a model fails, the next one is tried; when all fail, or
- * there is no key, the lyrics simply show without a translation.
+ * Experiment requested by the owner: AI translation of lyrics, through the owner's proxy
+ * (web/, sonara.rashiiddsr.my.id/api). The proxy holds the AI providers' keys, tries one provider
+ * after another (Gemini, Groq, OpenRouter and others), keeps every song's translation so the same
+ * song is translated once for everyone, and limits how much one install or address may ask; the
+ * app holds no key. Requests are signed with a client secret built in sealed (SONARA_API_SECRET,
+ * see app/build.gradle.kts). When the proxy can't translate, the lyrics simply show without one.
  * It is kept in this file and the lyrics page so the feature can be removed in one go.
  */
 
 package com.metrolist.music.lyrics
 
 import android.content.Context
+import androidx.core.content.edit
 import com.metrolist.music.BuildConfig
 import com.metrolist.music.constants.LyricsTranslateKey
 import com.metrolist.music.constants.LyricsTranslateLanguageKey
@@ -44,16 +46,16 @@ import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
-import kotlinx.serialization.json.addJsonObject
+import kotlinx.serialization.json.add
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.contentOrNull
-import kotlinx.serialization.json.jsonArray
-import kotlinx.serialization.json.jsonObject
-import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonArray
 import timber.log.Timber
-import java.util.Locale
+import java.security.MessageDigest
+import java.util.UUID
+import javax.crypto.Mac
+import javax.crypto.spec.SecretKeySpec
 
 object LyricsTranslator {
     /** Stored in [com.metrolist.music.db.entities.LyricsEntity.translationMode]. */
@@ -89,13 +91,17 @@ object LyricsTranslator {
 
     fun languageName(code: String): String = languages.firstOrNull { it.first == code }?.second ?: code
 
-    private const val AI_BATCH_LINES = 150
+    // The proxy takes up to 400 lines a request; a song this long is sent in parts.
+    private const val REQUEST_LINES = 300
     private const val PAIR = '\t'
-    private const val AI_TEMPERATURE = 0.3
 
     // Opened from its sealed form the first time it is needed (SealedKey).
-    private val aiKey by lazy { SealedKey.open(BuildConfig.AI_TRANSLATE_KEY_SEALED) }
-    private val aiAvailable get() = aiKey.isNotBlank()
+    private val apiSecret by lazy { SealedKey.open(BuildConfig.SONARA_API_SECRET_SEALED) }
+    private val apiAvailable get() = apiSecret.isNotBlank()
+
+    /** When the proxy said "too many requests": nothing is asked again before then. */
+    @Volatile
+    private var pausedUntil = 0L
 
     private val json = Json { ignoreUnknownKeys = true }
 
@@ -121,21 +127,27 @@ object LyricsTranslator {
      * line cannot shift the others. Fails when there is no key or every model failed.
      */
     suspend fun translate(
+        context: Context,
         lines: List<String>,
         target: String,
     ): Result<Map<String, String>> =
         withContext(Dispatchers.IO) {
             runCatching {
-                check(aiAvailable) { "No AI key built in" }
+                check(apiAvailable) { "No client secret built in" }
+                check(System.currentTimeMillis() >= pausedUntil) { "Translation paused after too many requests" }
+                val install = installId(context)
                 val sources = lines.map { it.trim() }.filter { it.isNotEmpty() && !isVocalsOnly(it) }.distinct()
                 coroutineScope {
                     sources
-                        .chunked(AI_BATCH_LINES)
-                        .map { batch -> async { translateBatch(batch, target) } }
+                        .chunked(REQUEST_LINES)
+                        .map { batch -> async { requestTranslation(batch, target, install) } }
                         .awaitAll()
                         .fold(emptyMap<String, String>()) { all, part -> all + part }
                 }
-            }.onFailure { if (it is CancellationException) throw it }
+            }.onFailure {
+                if (it is CancellationException) throw it
+                Timber.w(it, "Lyrics translation failed")
+            }
         }
 
     /**
@@ -210,7 +222,7 @@ object LyricsTranslator {
         if (!claim(key)) return true
         try {
             val sources = if (lyricsTextLooksSynced(text)) LyricsUtils.parseLyrics(text).map { it.text } else text.lines()
-            val found = translate(sources, target).getOrElse { return false }
+            val found = translate(context, sources, target).getOrElse { return false }
             withContext(Dispatchers.IO) {
                 val current = database.lyrics(songId).first()
                 // Lyrics edited or replaced meanwhile: this translation belongs to the old text.
@@ -232,91 +244,68 @@ object LyricsTranslator {
         }
     }
 
-    /** Tries the models in turn (busy, retired, a malformed answer) and gives up after the last. */
-    private suspend fun translateBatch(
+    /**
+     * One request to the proxy: `{"target", "lines"}`, signed, answered with the translated lines
+     * by number, `{"lines": [{"n": 1, "t": "..."}]}` (the format the AI itself answers in).
+     */
+    private suspend fun requestTranslation(
         batch: List<String>,
         target: String,
+        install: String,
     ): Map<String, String> {
-        var lastError: Exception? = null
-        for (model in models) {
-            try {
-                return aiBatch(batch, target, model)
-            } catch (cancelled: CancellationException) {
-                throw cancelled
-            } catch (e: Exception) {
-                Timber.w(e, "AI translation with %s failed", model)
-                lastError = e
-            }
-        }
-        throw lastError ?: IllegalStateException("No AI model configured")
-    }
-
-    private val models: List<String>
-        get() =
-            (listOf(BuildConfig.AI_TRANSLATE_MODEL) + BuildConfig.AI_TRANSLATE_FALLBACK_MODELS.split(','))
-                .map { it.trim() }
-                .filter { it.isNotEmpty() }
-                .distinct()
-
-    // ---- AI (OpenAI-compatible chat completions) ----
-
-    private suspend fun aiBatch(
-        batch: List<String>,
-        target: String,
-        model: String,
-    ): Map<String, String> {
-        val language = Locale.forLanguageTag(target).getDisplayName(Locale.ENGLISH).ifBlank { target }
         val body =
             buildJsonObject {
-                put("model", model)
-                put("temperature", AI_TEMPERATURE)
-                putJsonArray("messages") {
-                    addJsonObject {
-                        put("role", "system")
-                        put("content", aiInstructions(language))
-                    }
-                    addJsonObject {
-                        put("role", "user")
-                        put("content", batch.withIndex().joinToString("\n") { (i, line) -> "${i + 1}\t$line" })
-                    }
-                }
-            }
+                put("target", target)
+                putJsonArray("lines") { batch.forEach { add(it) } }
+            }.toString()
+        val time = (System.currentTimeMillis() / 1000).toString()
         val response =
-            client.post(BuildConfig.AI_TRANSLATE_BASE_URL.trimEnd('/') + "/chat/completions") {
-                header("Authorization", "Bearer $aiKey")
+            client.post(BuildConfig.SONARA_API_URL.trimEnd('/') + "/translate") {
+                header("X-Sonara-Install", install)
+                header("X-Sonara-Time", time)
+                header("X-Sonara-Client", "android/${BuildConfig.VERSION_NAME}")
+                header("X-Sonara-Signature", signature(apiSecret, TRANSLATE_PATH, time, install, body))
                 contentType(ContentType.Application.Json)
-                setBody(body.toString())
+                setBody(body)
             }
         val text = response.bodyAsText()
-        check(response.status.isSuccess()) { "AI translation: HTTP ${response.status.value}" }
-        val content =
-            json.parseToJsonElement(text).jsonObject["choices"]
-                ?.jsonArray
-                ?.firstOrNull()
-                ?.jsonObject
-                ?.get("message")
-                ?.jsonObject
-                ?.get("content")
-                ?.jsonPrimitive
-                ?.contentOrNull
-                .orEmpty()
-        val numbered = checkNotNull(parseAiLines(content)) { "AI translation: no JSON in the answer" }
+        if (response.status.value == 429) {
+            val wait = response.headers["Retry-After"]?.toLongOrNull() ?: DEFAULT_PAUSE_SECONDS
+            pausedUntil = System.currentTimeMillis() + wait.coerceIn(1, MAX_PAUSE_SECONDS) * 1000
+        }
+        check(response.status.isSuccess()) { "Translation proxy: HTTP ${response.status.value}" }
+        val numbered = checkNotNull(parseAiLines(text)) { "Translation proxy: unexpected answer" }
         return numbered.mapNotNull { (n, translated) -> batch.getOrNull(n - 1)?.let { it to translated } }.toMap()
     }
 
-    private fun aiInstructions(language: String) =
-        """
-        You translate song lyrics into $language for a music player.
-        You get the whole song, one numbered line per row, so you can read it in context.
-        Songs often mix languages, even inside one line. For every line that has any words not in
-        $language, translate the whole line into $language, including those words, so it reads as
-        one natural $language line. Skip only lines written entirely in $language, and lines that
-        are only sounds or ad-libs (ooh, la la, yeah). Names and nicknames stay as they are.
-        Keep the meaning, feeling and imagery of a song lyric, not a word-for-word gloss.
-        One translation per numbered line; never merge or split lines.
-        Reply with JSON only: {"lines": [{"n": <line number>, "t": "<translation>"}]}
-        listing only the lines you translated.
-        """.trimIndent()
+    private const val TRANSLATE_PATH = "/api/translate"
+    private const val DEFAULT_PAUSE_SECONDS = 60L
+    private const val MAX_PAUSE_SECONDS = 3600L
+
+    /**
+     * Hex HMAC-SHA256, keyed with the client secret, of `POST`, the path, the time, the install
+     * and the body's SHA-256: the proxy checks it (web/private/src), and the desktop app signs alike.
+     */
+    internal fun signature(
+        secret: String,
+        path: String,
+        time: String,
+        install: String,
+        body: String,
+    ): String {
+        val bodyHash = MessageDigest.getInstance("SHA-256").digest(body.toByteArray(Charsets.UTF_8)).toHex()
+        val mac = Mac.getInstance("HmacSHA256").apply { init(SecretKeySpec(secret.toByteArray(Charsets.UTF_8), "HmacSHA256")) }
+        return mac.doFinal("POST\n$path\n$time\n$install\n$bodyHash".toByteArray(Charsets.UTF_8)).toHex()
+    }
+
+    private fun ByteArray.toHex(): String = joinToString("") { "%02x".format(it) }
+
+    /** A random id for this install, made once: the proxy limits requests per install with it. */
+    private fun installId(context: Context): String {
+        val prefs = context.getSharedPreferences("sonara_install", Context.MODE_PRIVATE)
+        prefs.getString("id", null)?.let { return it }
+        return UUID.randomUUID().toString().also { id -> prefs.edit { putString("id", id) } }
+    }
 
     /**
      * The model's answer, `{"lines": [{"n": 1, "t": "..."}]}`, with or without a ```json fence,

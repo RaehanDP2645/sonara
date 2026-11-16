@@ -125,6 +125,9 @@
 -dontwarn java.beans.Introspector
 -dontwarn java.beans.PropertyDescriptor
 
+# Kuromoji finds its dictionary next to its classes (lyrics romanization)
+-keep class com.atilika.kuromoji.** { *; }
+
 ## Queue Persistence Rules
 # Keep queue-related classes to prevent serialization issues in release builds
 -keep class com.metrolist.music.models.PersistQueue { *; }

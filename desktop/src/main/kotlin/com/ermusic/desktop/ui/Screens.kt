@@ -459,7 +459,11 @@ fun SearchResultsScreen(query: String, app: AppState) {
                 ScrollingColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(end = Spacing.S, bottom = Spacing.XXL)) {
                     itemsIndexed(page.summaries, key = { index, _ -> index }, contentType = { _, _ -> "section" }) { index, section ->
                         when {
-                            index == 0 && section.items.isNotEmpty() -> Hero(section.items.first(), app)
+                            // The top result, unless hidden (a music video when videos are hidden):
+                            // then the first song that isn't.
+                            index == 0 && section.items.isNotEmpty() ->
+                                (section.items.firstOrNull { it.allowed() } ?: page.summaries.flatMap { it.items }.firstOrNull { it is SongItem && it.allowed() })
+                                    ?.let { Hero(it, app) }
                             section.items.all { it is SongItem } ->
                                 Column(Modifier.padding(start = Spacing.S, end = Spacing.L, bottom = Spacing.XL)) {
                                     Text(section.title, style = MaterialTheme.typography.headlineSmall, modifier = Modifier.padding(bottom = Spacing.S))

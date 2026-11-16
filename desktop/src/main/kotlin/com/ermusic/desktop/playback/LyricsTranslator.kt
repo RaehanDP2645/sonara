@@ -2,10 +2,12 @@
  * Sonara (C) 2026, derived from Metrolist
  * Licensed under GPL-3.0 | See git history for contributors
  *
- * The Android app's AI translator (app/.../lyrics/LyricsTranslator.kt): an OpenAI-compatible chat
- * endpoint, Gemini by default, with the owner's key built in from local.properties. The model gets
- * the whole song numbered and answers only for the lines it translated. When every model fails,
- * lyrics show without a translation. Results are kept on disk per song and language.
+ * The Android app's AI translator (app/.../lyrics/LyricsTranslator.kt), through the owner's proxy
+ * (web/, sonara.rashiiddsr.my.id/api), which holds the AI providers' keys, tries one provider after
+ * another and keeps every song's translation for everyone; the app holds no key. Requests are
+ * signed with the sealed client secret (BuildSecrets.API_SECRET), as the phone signs them. When
+ * the proxy can't translate, lyrics show without a translation. Results are kept on disk per song
+ * and language.
  */
 
 package com.ermusic.desktop.playback
@@ -17,17 +19,17 @@ import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.sync.Mutex
 import com.ermusic.desktop.AppFiles
 import com.ermusic.desktop.BuildSecrets
+import com.ermusic.desktop.Os
+import com.ermusic.desktop.data.Settings
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
-import kotlinx.serialization.json.addJsonObject
+import kotlinx.serialization.json.add
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.contentOrNull
-import kotlinx.serialization.json.jsonArray
-import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonArray
@@ -36,12 +38,18 @@ import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
 import java.io.File
-import java.util.Locale
+import java.security.MessageDigest
+import java.util.UUID
+import javax.crypto.Mac
+import javax.crypto.spec.SecretKeySpec
 import java.util.concurrent.TimeUnit
 
 object LyricsTranslator {
     private const val MODE = "Sonara-2"
-    private const val TEMPERATURE = 0.3
+    private const val REQUEST_LINES = 300
+    private const val TRANSLATE_PATH = "/api/translate"
+    private const val DEFAULT_PAUSE_SECONDS = 60L
+    private const val MAX_PAUSE_SECONDS = 3600L
     private const val TIMEOUT_SECONDS = 90L
     private const val PAIR = '\t'
 
@@ -76,7 +84,7 @@ object LyricsTranslator {
     /** Source line to translation, or an empty map when that isn't possible right now. */
     suspend fun translate(trackId: String, lines: List<String>, target: String): Map<String, String> =
         withContext(Dispatchers.IO) {
-            if (BuildSecrets.AI_KEY.isBlank()) return@withContext emptyMap()
+            if (BuildSecrets.API_SECRET.isBlank() || System.currentTimeMillis() < pausedUntil) return@withContext emptyMap()
             val file = File(dir, "$trackId.$target.$MODE.tsv")
             // The player readies the translation when the song starts; the lyrics page, opened
             // meanwhile, waits for that answer instead of asking again.
@@ -103,44 +111,57 @@ object LyricsTranslator {
             if (split <= 0) null else row.substring(0, split) to row.substring(split + 1)
         }.toMap()
 
-    private fun firstAnswer(batch: List<String>, target: String): Map<String, String>? {
-        val models = (listOf(BuildSecrets.AI_MODEL) + BuildSecrets.AI_FALLBACK_MODELS.split(',')).map { it.trim() }.filter { it.isNotEmpty() }.distinct()
-        return models.firstNotNullOfOrNull { model -> runCatching { ask(batch, target, model) }.getOrNull() }
-    }
+    /** When the proxy said "too many requests": nothing is asked again before then. */
+    @Volatile
+    private var pausedUntil = 0L
 
-    private fun ask(batch: List<String>, target: String, model: String): Map<String, String> {
-        val language = Locale.forLanguageTag(target).getDisplayName(Locale.ENGLISH).ifBlank { target }
+    /** All of the song's lines, in parts of [REQUEST_LINES]; null when any part failed. */
+    private fun firstAnswer(sources: List<String>, target: String): Map<String, String>? =
+        runCatching { sources.chunked(REQUEST_LINES).fold(emptyMap<String, String>()) { all, part -> all + ask(part, target) } }
+            .getOrNull()
+
+    /** One signed request to the proxy, answered `{"lines": [{"n": 1, "t": "..."}]}`. */
+    private fun ask(batch: List<String>, target: String): Map<String, String> {
         val body =
             buildJsonObject {
-                put("model", model)
-                put("temperature", TEMPERATURE)
-                putJsonArray("messages") {
-                    addJsonObject {
-                        put("role", "system")
-                        put("content", instructions(language))
-                    }
-                    addJsonObject {
-                        put("role", "user")
-                        put("content", batch.withIndex().joinToString("\n") { (i, line) -> "${i + 1}\t$line" })
-                    }
-                }
-            }
+                put("target", target)
+                putJsonArray("lines") { batch.forEach { add(it) } }
+            }.toString()
+        val install = installId()
+        val time = (System.currentTimeMillis() / 1000).toString()
         val request =
             Request.Builder()
-                .url(BuildSecrets.AI_BASE_URL.trimEnd('/') + "/chat/completions")
-                .header("Authorization", "Bearer ${BuildSecrets.AI_KEY}")
-                .post(body.toString().toRequestBody("application/json".toMediaType()))
+                .url(BuildSecrets.API_URL.trimEnd('/') + "/translate")
+                .header("X-Sonara-Install", install)
+                .header("X-Sonara-Time", time)
+                .header("X-Sonara-Client", "desktop-${Os.name.lowercase()}/${BuildSecrets.APP_VERSION}")
+                .header("X-Sonara-Signature", signature(BuildSecrets.API_SECRET, TRANSLATE_PATH, time, install, body))
+                .post(body.toRequestBody("application/json".toMediaType()))
                 .build()
         val text =
             http.newCall(request).execute().use { response ->
+                if (response.code == 429) {
+                    val wait = response.header("Retry-After")?.toLongOrNull() ?: DEFAULT_PAUSE_SECONDS
+                    pausedUntil = System.currentTimeMillis() + wait.coerceIn(1, MAX_PAUSE_SECONDS) * 1000
+                }
                 check(response.isSuccessful) { "HTTP ${response.code}" }
                 response.body.string()
             }
-        val content =
-            json.parseToJsonElement(text).jsonObject["choices"]?.jsonArray?.firstOrNull()?.jsonObject
-                ?.get("message")?.jsonObject?.get("content")?.jsonPrimitive?.contentOrNull.orEmpty()
-        return checkNotNull(parse(content)).mapNotNull { (n, line) -> batch.getOrNull(n - 1)?.let { it to line } }.toMap()
+        return checkNotNull(parse(text)) { "unexpected answer" }.mapNotNull { (n, line) -> batch.getOrNull(n - 1)?.let { it to line } }.toMap()
     }
+
+    /** Hex HMAC-SHA256 of `POST`, the path, the time, the install and the body's SHA-256, as the phone signs. */
+    internal fun signature(secret: String, path: String, time: String, install: String, body: String): String {
+        val bodyHash = MessageDigest.getInstance("SHA-256").digest(body.toByteArray(Charsets.UTF_8)).toHex()
+        val mac = Mac.getInstance("HmacSHA256").apply { init(SecretKeySpec(secret.toByteArray(Charsets.UTF_8), "HmacSHA256")) }
+        return mac.doFinal("POST\n$path\n$time\n$install\n$bodyHash".toByteArray(Charsets.UTF_8)).toHex()
+    }
+
+    private fun ByteArray.toHex(): String = joinToString("") { "%02x".format(it) }
+
+    @Synchronized
+    private fun installId(): String =
+        Settings.installId.value.ifBlank { UUID.randomUUID().toString().also { Settings.installId.value = it } }
 
     private fun parse(content: String): Map<Int, String>? {
         val cleaned = content.trim().removePrefix("```json").removePrefix("```").removeSuffix("```").trim()
@@ -153,18 +174,4 @@ object LyricsTranslator {
             if (t.isNullOrEmpty()) null else n to t
         }.toMap()
     }
-
-    private fun instructions(language: String) =
-        """
-        You translate song lyrics into $language for a music player.
-        You get the whole song, one numbered line per row, so you can read it in context.
-        Songs often mix languages, even inside one line. For every line that has any words not in
-        $language, translate the whole line into $language, including those words, so it reads as
-        one natural $language line. Skip only lines written entirely in $language, and lines that
-        are only sounds or ad-libs (ooh, la la, yeah). Names and nicknames stay as they are.
-        Keep the meaning, feeling and imagery of a song lyric, not a word-for-word gloss.
-        One translation per numbered line; never merge or split lines.
-        Reply with JSON only: {"lines": [{"n": <line number>, "t": "<translation>"}]}
-        listing only the lines you translated.
-        """.trimIndent()
 }

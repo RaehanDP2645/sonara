@@ -34,22 +34,23 @@ fun sealKey(key: String): String {
     return Base64.getEncoder().encodeToString(salt + iv + cipher.doFinal(key.toByteArray(Charsets.UTF_8)))
 }
 
-// The translator key is built in: its sealed form is kept in the repository, so every build has it
-// with nothing to set up. A key in local.properties (or the environment) takes its place; run
-// `./gradlew :app:sealTranslatorKey --no-configuration-cache` to seal that one into the file.
-val sealedKeyFile = rootProject.file("secrets/translator.sealed")
-val sealedTranslatorKey: String =
-    aiSetting("SONARA_AI_KEY", "").let { key ->
-        if (key.isNotEmpty()) sealKey(key) else sealedKeyFile.takeIf { it.isFile }?.readText()?.trim().orEmpty()
+// Lyrics are translated by the owner's proxy (web/, sonara.rashiiddsr.my.id/api), which holds the
+// AI providers' keys; the apps hold none. They sign each request with a client secret, sealed in
+// the repository so every build has it: put a new one in local.properties as SONARA_API_SECRET and
+// run `./gradlew :app:sealApiSecret --no-configuration-cache` to seal it into the file.
+val sealedSecretFile = rootProject.file("secrets/api.sealed")
+val sealedApiSecret: String =
+    aiSetting("SONARA_API_SECRET", "").let { secret ->
+        if (secret.isNotEmpty()) sealKey(secret) else sealedSecretFile.takeIf { it.isFile }?.readText()?.trim().orEmpty()
     }
 
-tasks.register("sealTranslatorKey") {
-    description = "Seals the SONARA_AI_KEY of local.properties into secrets/translator.sealed."
+tasks.register("sealApiSecret") {
+    description = "Seals the SONARA_API_SECRET of local.properties into secrets/api.sealed."
     doLast {
-        check(aiSetting("SONARA_AI_KEY", "").isNotEmpty()) { "Put SONARA_AI_KEY in local.properties first." }
-        sealedKeyFile.parentFile.mkdirs()
-        sealedKeyFile.writeText(sealedTranslatorKey + "\n")
-        println("Sealed into ${sealedKeyFile.path}")
+        check(aiSetting("SONARA_API_SECRET", "").isNotEmpty()) { "Put SONARA_API_SECRET in local.properties first." }
+        sealedSecretFile.parentFile.mkdirs()
+        sealedSecretFile.writeText(sealedApiSecret + "\n")
+        println("Sealed into ${sealedSecretFile.path}")
     }
 }
 
@@ -86,8 +87,8 @@ android {
         applicationId = applicationIdOverride ?: baseApplicationId
         minSdk = 26
         targetSdk = 36
-        versionCode = 2025
-        versionName = "2.4.2"
+        versionCode = 2026
+        versionName = "2.5.0"
         val baseVersionName = requireNotNull(versionName)
         buildConfigField("String", "BASE_VERSION_NAME", "\"$baseVersionName\"")
         buildCommit?.let { versionName = "$baseVersionName+$it" }
@@ -101,15 +102,12 @@ android {
         }
 
         buildConfigField("String", "ARCHITECTURE", "\"universal\"")
-        // OpenAI-compatible chat endpoint; the default is Gemini's.
-        buildConfigField("String", "AI_TRANSLATE_KEY_SEALED", "\"$sealedTranslatorKey\"")
-        buildConfigField("String", "AI_TRANSLATE_BASE_URL", "\"${aiSetting("SONARA_AI_BASE_URL", "https://generativelanguage.googleapis.com/v1beta/openai/")}\"")
-        buildConfigField("String", "AI_TRANSLATE_MODEL", "\"${aiSetting("SONARA_AI_MODEL", "gemini-flash-lite-latest")}\"")
-        // Tried in turn when the model above is busy or fails; comma separated.
-        buildConfigField("String", "AI_TRANSLATE_FALLBACK_MODELS", "\"${aiSetting("SONARA_AI_FALLBACK_MODELS", "gemini-3.5-flash-lite,gemini-3.8-flash,gemini-flash-latest")}\"")
+        // The owner's proxy for lyric translation (web/), and the sealed secret its requests are signed with.
+        buildConfigField("String", "SONARA_API_URL", "\"${aiSetting("SONARA_API_URL", "https://sonara.rashiiddsr.my.id/api")}\"")
+        buildConfigField("String", "SONARA_API_SECRET_SEALED", "\"$sealedApiSecret\"")
     }
 
-    // ER-Music ships a single FOSS flavor: no Cast, no in-app updater.
+    // ER-Music ships a single FOSS flavor; the built-in updater (update/) reads GitHub releases.
     flavorDimensions += listOf("variant")
     productFlavors {
         create("foss") {
@@ -341,6 +339,9 @@ dependencies {
     coreLibraryDesugaring(libs.desugaring)
 
     implementation(libs.timber)
+
+    // Lyrics romanization on the device (lyrics/LyricsRomanizer.kt): Japanese readings.
+    implementation(libs.kuromoji.ipadic)
 
     implementation(libs.profileinstaller)
     "baselineProfile"(project(":baselineprofile"))

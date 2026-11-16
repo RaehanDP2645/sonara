@@ -13,6 +13,8 @@ import com.ermusic.desktop.data.Housekeeping
 import com.ermusic.desktop.window.WindowsSession
 import com.ermusic.desktop.playback.LyricsRepository
 import com.ermusic.desktop.ui.OfflineStrip
+import com.ermusic.desktop.ui.UpdateDialog
+import com.ermusic.desktop.update.DesktopUpdater
 import com.ermusic.desktop.playback.Connection
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
@@ -363,6 +365,9 @@ fun main(args: Array<String>) {
                             } else {
                                 LaunchedEffect(account) { app.loadAccount() }
                                 App(app)
+                                // Built-in updater: a newer release, looked up once a day, or found from Settings.
+                                LaunchedEffect(Unit) { DesktopUpdater.checkAtStart() }
+                                DesktopUpdater.prompt?.let { UpdateDialog(it) }
                             }
                         }
                     }

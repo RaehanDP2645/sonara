@@ -50,6 +50,8 @@ data class Track(
     val albumName: String? = null,
     val setVideoId: String? = null,
     val credits: List<Credit> = emptyList(),
+    /** A music video rather than a song: skipped in the queue when music videos are hidden. */
+    val isVideo: Boolean = false,
 ) {
     val shareLink: String get() = "https://music.youtube.com/watch?v=$id"
 
@@ -70,6 +72,7 @@ fun SongItem.toTrack() =
         albumName = album?.name,
         setVideoId = setVideoId,
         credits = artists.map { Credit(it.name, it.id) },
+        isVideo = isVideoSong,
     )
 
 enum class Repeat { Off, All, One }
@@ -133,7 +136,8 @@ class Player(private val scope: CoroutineScope) {
         radioContinuation = null
         unshuffled = null
         mutableState.update { it.copy(queue = tracks, shuffle = false) }
-        load(start.coerceIn(tracks.indices))
+        // The song picked plays even when it's a music video and those are hidden.
+        load(start.coerceIn(tracks.indices), skipHidden = false)
     }
 
     /** Plays one song now and fills the queue with its radio. */
@@ -312,7 +316,21 @@ class Player(private val scope: CoroutineScope) {
         mutableState.update { it.copy(playing = false) }
     }
 
-    private fun load(index: Int, fromMs: Long = 0, crossfadeMs: Long = 0) {
+    private fun load(index: Int, fromMs: Long = 0, crossfadeMs: Long = 0, skipHidden: Boolean = true) {
+        // "Hide music videos" (Settings, off by default): a music video the queue moves to, by
+        // itself or with Next or Previous, is skipped onward in that direction.
+        if (skipHidden && Settings.hideVideos.value) {
+            val state = mutableState.value
+            if (state.queue.getOrNull(index)?.isVideo == true && index != state.index) {
+                val wrapped = index == 0 && state.index == state.queue.lastIndex
+                val target = playableNear(state, index, backwards = index < state.index && !wrapped)
+                when {
+                    target != null -> load(target, fromMs, crossfadeMs, skipHidden = false)
+                    index > state.index || wrapped -> stopAtEnd()
+                }
+                return
+            }
+        }
         loadJob?.cancel()
         outgoing?.cancelled = true
         if (crossfadeMs > 0) {
@@ -365,6 +383,14 @@ class Player(private val scope: CoroutineScope) {
                 mutableState.update { it.copy(loading = true, playing = true, offline = false) }
             }
         }
+    }
+
+    /** From [index] on (or back), the first item that isn't a music video; past the end only with Repeat all. */
+    private fun playableNear(state: PlayerState, index: Int, backwards: Boolean): Int? {
+        val queue = state.queue
+        val range = if (backwards) (index downTo 0) else (index until queue.size)
+        return range.firstOrNull { !queue[it].isVideo }
+            ?: if (!backwards && state.repeat == Repeat.All) (0 until index).firstOrNull { !queue[it].isVideo && it != state.index } else null
     }
 
     /** The next song in the queue that is already on the computer. */

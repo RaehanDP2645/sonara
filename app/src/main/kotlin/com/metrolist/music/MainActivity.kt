@@ -1185,6 +1185,13 @@ class MainActivity : FragmentActivity() {
                             .padding(bottom = com.metrolist.music.ui.theme.Spacing.M),
                     )
 
+                    // Built-in updater: a newer release found at launch or from About; a required one stays open.
+                    val updatePrompt by com.metrolist.music.update.AppUpdater.prompt.collectAsStateWithLifecycle()
+                    LaunchedEffect(Unit) { com.metrolist.music.update.AppUpdater.checkAtStart(this@MainActivity) }
+                    updatePrompt?.let { release ->
+                        com.metrolist.music.update.UpdateDialog(release) { com.metrolist.music.update.AppUpdater.dismissPrompt() }
+                    }
+
                     collaborationInvite?.let { invite ->
                         val joinedText = stringResource(R.string.er_joined_playlist)
                         DefaultDialog(

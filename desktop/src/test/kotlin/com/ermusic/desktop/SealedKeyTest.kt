@@ -20,15 +20,15 @@ class SealedKeyTest {
     private val expected: String? =
         listOf(File("../local.properties"), File("local.properties"))
             .firstOrNull(File::isFile)
-            ?.let { file -> Properties().apply { file.inputStream().use(::load) }.getProperty("SONARA_AI_KEY")?.trim() }
+            ?.let { file -> Properties().apply { file.inputStream().use(::load) }.getProperty("SONARA_API_SECRET")?.trim() }
             ?.takeIf { it.isNotEmpty() }
-            ?: System.getenv("SONARA_AI_KEY")?.trim()?.takeIf { it.isNotEmpty() }
+            ?: System.getenv("SONARA_API_SECRET")?.trim()?.takeIf { it.isNotEmpty() }
 
     @Test
     fun sealedKeyOpensToTheOwnersKey() {
         // Compared without printing either value.
-        assertTrue("the built-in key opens", BuildSecrets.AI_KEY.length > MIN_KEY_LENGTH)
-        if (expected != null) assertTrue("the sealed key opens to the configured one", BuildSecrets.AI_KEY == expected)
+        assertTrue("the built-in key opens", BuildSecrets.API_SECRET.length > MIN_KEY_LENGTH)
+        if (expected != null) assertTrue("the sealed key opens to the configured one", BuildSecrets.API_SECRET == expected)
     }
 
     @Test

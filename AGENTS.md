@@ -29,7 +29,14 @@ in `docs/perf.md`; never write numbers that were not measured.
   components in `ui/component/`. No magic numbers scattered across screens.
 - Lazy lists: always pass `key` and `contentType`; list-item parameters must be stable.
 - Scope: the app intentionally has no social/companion integrations (Discord, Last.fm, Listen
-  Together, Spotify, alarms, updater). Do not re-add them.
+  Together, Spotify, alarms). Do not re-add them.
+- Built-in updater, requested by the owner: `update/ReleaseCheck.kt` (shared with the desktop)
+  reads the newest GitHub release of `rashiiddsr/sonara`; `update/AppUpdater.kt` and
+  `UpdateDialog.kt` offer it (once a day at most, unless switched off in About or the version was
+  skipped) and hand the APK to Android's installer; About has Check for updates. The desktop's
+  `update/DesktopUpdater.kt` runs the .msi, opens the .dmg for this Mac, replaces an AppImage, or
+  opens the .deb. A release is an update only when its version is higher: bump the version (and
+  tag `v<version>`) for every update; re-uploading files to an existing release reaches no one.
 - Experiment, requested by the owner and needing Google Play services: Google Cast
   (`playback/SonaraCast.kt`, Default Media Receiver). Keep it isolated so it can be removed.
 - Experiment, requested by the owner: song recognition through Shazam's unofficial endpoint
@@ -40,13 +47,19 @@ in `docs/perf.md`; never write numbers that were not measured.
   `ui/player/LyricsPage.kt`, Settings > Lyrics). Off by default; when on, lyrics are translated
   as soon as they are fetched, into the chosen language (English by default). The model gets
   the whole song numbered and answers only for the lines it translated, so mixed-language songs
-  and "ooh" lines are handled. The owner's key is built in, sealed with AES-GCM in
-  `secrets/translator.sealed` (opened by `SealedKey.kt` in both apps), so every build has it with
-  nothing to set up and no app holds a readable copy. To change it, put the new `SONARA_AI_KEY` in
-  `local.properties` and run `./gradlew :app:sealTranslatorKey --no-configuration-cache`; optional
-  `SONARA_AI_BASE_URL`, `SONARA_AI_MODEL`, `SONARA_AI_FALLBACK_MODELS` (an OpenAI-compatible
-  endpoint, Gemini by default). Users are never asked for a key. AI only: when every model fails,
-  lyrics show without a translation. Stored in `lyrics.translatedLyrics`.
+  and "ooh" lines are handled. Both apps ask the owner's proxy (`web/`, PHP, deployed at
+  `sonara.rashiiddsr.my.id/api`; see `web/DEPLOY.md`), never an AI provider: the proxy holds the
+  providers' keys encrypted, tries Gemini, Groq, OpenRouter and others in the owner's order, keeps
+  every song's translation for everyone and limits each install and address. Requests are signed
+  (HMAC-SHA256, headers `X-Sonara-*`) with a client secret sealed in `secrets/api.sealed` (opened
+  by `SealedKey.kt` in both apps); to change it, put `SONARA_API_SECRET` in `local.properties`, run
+  `./gradlew :app:sealApiSecret --no-configuration-cache`, and set the same secret in the proxy's
+  admin page. Users are never asked for a key. AI only: when the proxy can't translate, lyrics
+  show without a translation. Stored in `lyrics.translatedLyrics`.
+- Lyrics romanization (`lyrics/LyricsRomanizer.kt`, shared with the desktop; Settings > Lyrics,
+  on by default): lines in another script also in Latin letters, made on the device with no AI:
+  Kuromoji for Japanese, Revised Romanization for Korean, ICU (Android's built-in, ICU4J on the
+  desktop) for Chinese pinyin and every other script. No romanization when none can be made.
 - The app always speaks English, whatever the phone's language, with no setting to change it
   (owner's choice, `utils/AppLanguage.kt`). The Indonesian strings stay in `values-in/` for now.
 - Sign-in is required (`WelcomeScreen`): one Google sign-in page in a sheet, inside the app, because

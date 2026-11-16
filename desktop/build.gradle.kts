@@ -41,12 +41,17 @@ fun sealKey(key: String): String {
     return Base64.getEncoder().encodeToString(salt + iv + cipher.doFinal(key.toByteArray(Charsets.UTF_8)))
 }
 
+/** Bumped for every installer; the app shows it, and the updater compares it with the newest release. */
+val appVersion = "2.5.0"
+
 val secretsDir = layout.buildDirectory.dir("generated/secrets")
 val generateSecrets by tasks.registering {
     val source = rootProject.file("../local.properties")
-    // The built-in key, sealed (see app/build.gradle.kts); a key in local.properties takes its place.
-    val sealedFile = rootProject.file("../secrets/translator.sealed")
+    // The translation proxy's client secret, sealed (see app/build.gradle.kts); one in
+    // local.properties takes its place.
+    val sealedFile = rootProject.file("../secrets/api.sealed")
     if (sealedFile.exists()) inputs.file(sealedFile)
+    inputs.property("appVersion", appVersion)
     val target = secretsDir.map { it.file("com/ermusic/desktop/BuildSecrets.kt") }
     if (source.exists()) inputs.file(source)
     outputs.file(target)
@@ -60,11 +65,10 @@ val generateSecrets by tasks.registering {
             package com.ermusic.desktop
 
             internal object BuildSecrets {
-                private const val AI_KEY_SEALED = "${setting("SONARA_AI_KEY", "").let { if (it.isNotEmpty()) sealKey(it) else sealedFile.takeIf { f -> f.isFile }?.readText()?.trim().orEmpty() }}"
-                val AI_KEY: String by lazy { SealedKey.open(AI_KEY_SEALED) }
-                const val AI_BASE_URL = "${setting("SONARA_AI_BASE_URL", "https://generativelanguage.googleapis.com/v1beta/openai/")}"
-                const val AI_MODEL = "${setting("SONARA_AI_MODEL", "gemini-flash-lite-latest")}"
-                const val AI_FALLBACK_MODELS = "${setting("SONARA_AI_FALLBACK_MODELS", "gemini-3.5-flash-lite,gemini-3.8-flash,gemini-flash-latest")}"
+                const val APP_VERSION = "$appVersion"
+                private const val API_SECRET_SEALED = "${setting("SONARA_API_SECRET", "").let { if (it.isNotEmpty()) sealKey(it) else sealedFile.takeIf { f -> f.isFile }?.readText()?.trim().orEmpty() }}"
+                val API_SECRET: String by lazy { SealedKey.open(API_SECRET_SEALED) }
+                const val API_URL = "${setting("SONARA_API_URL", "https://sonara.rashiiddsr.my.id/api")}"
             }
             """.trimIndent(),
         )
@@ -77,16 +81,18 @@ val fromAndroid by tasks.registering(Sync::class) {
     from("../app/src/main/kotlin/com/metrolist") {
         include("kugou/**", "lrclib/**", "paxsenix/**", "music/betterlyrics/**")
         include("music/utils/YouTubeWebSession.kt", "music/utils/YouTubePlaylistEditor.kt")
+        // The updater's release check, shared with the phone (desktop/.../update/DesktopUpdater.kt).
+        include("music/update/ReleaseCheck.kt")
         listOf(
             "LyricsProvider", "LyricsUtils", "LyricsEntry", "BetterLyricsProvider", "LrcLibLyricsProvider", "KuGouLyricsProvider",
             "PaxsenixLyricsProvider", "LyricsPlusProvider", "ZemerLyricsProvider", "YouTubeLyricsProvider", "YouTubeSubtitleLyricsProvider",
+            "LyricsRomanizer",
         ).forEach { include("music/lyrics/$it.kt") }
     }
     into(layout.buildDirectory.dir("generated/fromAndroid"))
 }
 kotlin.sourceSets["main"].kotlin.srcDir(fromAndroid)
 
-val appVersion = "2.4.2"
 val ktor = "3.6.0"
 val ffmpegPresets = "1.5.14"
 
@@ -116,6 +122,9 @@ dependencies {
         },
     )
     implementation(compose.material3)
+    // Lyrics romanization (the Android app's LyricsRomanizer.kt): Japanese readings, ICU transliterators.
+    implementation("com.atilika.kuromoji:kuromoji-ipadic:0.9.0")
+    implementation("com.ibm.icu:icu4j:77.1")
     implementation("com.github.MetrolistGroup.innertubex:innertubex:v0.7.4")
     implementation("io.ktor:ktor-client-core:$ktor")
     implementation("io.ktor:ktor-client-okhttp:$ktor")

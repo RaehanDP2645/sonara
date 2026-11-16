@@ -14,6 +14,7 @@ import androidx.compose.material3.ProvideTextStyle
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -24,11 +25,15 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.metrolist.music.LocalDatabase
 import com.metrolist.music.LocalPlayerConnection
 import com.metrolist.music.R
+import com.metrolist.music.constants.LyricsRomanizeKey
 import com.metrolist.music.constants.LyricsTranslateKey
 import com.metrolist.music.constants.LyricsTranslateLanguageKey
 import com.metrolist.music.db.entities.LyricsEntity
 import com.metrolist.music.di.LyricsHelperEntryPoint
+import com.metrolist.music.lyrics.LyricsRomanizer
 import com.metrolist.music.lyrics.LyricsTranslator
+import com.metrolist.music.lyrics.LyricsUtils
+import com.metrolist.music.lyrics.lyricsTextLooksSynced
 import com.metrolist.music.models.MediaMetadata
 import com.metrolist.music.ui.component.EmptyState
 import com.metrolist.music.ui.component.LoadingState
@@ -90,6 +95,17 @@ fun LyricsPage(
         LyricsTranslator.ensureTranslated(context, database, entity.id)
     }
 
+    // Romanization (Settings, on by default): lines in another script also in Latin letters,
+    // made on the device for the lyrics on screen. Lines it cannot romanize get nothing.
+    val romanize by rememberPreference(LyricsRomanizeKey, defaultValue = true)
+    val romanizations by produceState(emptyMap<String, String>(), romanize, lyrics) {
+        value = emptyMap()
+        val text = lyrics
+        if (!romanize || text.isNullOrEmpty() || text == LyricsEntity.LYRICS_NOT_FOUND) return@produceState
+        val lines = if (lyricsTextLooksSynced(text)) LyricsUtils.parseLyrics(text).map { it.text } else text.lines()
+        value = runCatching { LyricsRomanizer.romanize(lines) }.getOrDefault(emptyMap())
+    }
+
     Box(modifier, contentAlignment = Alignment.Center) {
         when (lyrics) {
             null -> LoadingState(rows = 6)
@@ -101,6 +117,7 @@ fun LyricsPage(
                         sliderPositionProvider = sliderPositionProvider,
                         showLyrics = true,
                         translations = if (translate) stored.orEmpty() else emptyMap(),
+                        romanizations = romanizations,
                         modifier = Modifier.padding(horizontal = Spacing.XS),
                     )
                 }

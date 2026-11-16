@@ -31,7 +31,18 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.Switch
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.platform.LocalContext
+import com.metrolist.music.constants.UpdateNotifyKey
+import com.metrolist.music.update.AppUpdater
+import com.metrolist.music.utils.rememberPreference
+import kotlinx.coroutines.launch
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -83,6 +94,15 @@ private val Contacts =
 @Composable
 fun AboutScreen(navController: NavController) {
     val uriHandler = LocalUriHandler.current
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    val (notifyUpdates, onNotifyUpdates) = rememberPreference(UpdateNotifyKey, true)
+    // What "Check for updates" says under it: null until asked.
+    var updateStatus by remember { mutableStateOf<String?>(null) }
+    val checking = stringResource(R.string.er_update_checking)
+    val upToDate = stringResource(R.string.er_update_up_to_date)
+    val checkFailed = stringResource(R.string.er_update_check_failed)
+    val found = stringResource(R.string.er_update_found)
     Column(
         Modifier
             .windowInsetsPadding(LocalPlayerAwareWindowInsets.current.only(WindowInsetsSides.Horizontal + WindowInsetsSides.Bottom))
@@ -168,6 +188,38 @@ fun AboutScreen(navController: NavController) {
                 }
             }
         }
+
+        // Built-in updater: asks GitHub for the newest release now; a newer one opens the update
+        // dialog (even a version skipped earlier, since it was asked for here).
+        Material3SettingsGroup(
+            title = stringResource(R.string.er_updates),
+            items = listOf(
+                Material3SettingsItem(
+                    icon = painterResource(R.drawable.download),
+                    title = { Text(stringResource(R.string.er_update_check)) },
+                    description = updateStatus?.let { status -> { Text(status) } },
+                    onClick = {
+                        if (updateStatus != checking) {
+                            updateStatus = checking
+                            scope.launch {
+                                AppUpdater
+                                    .check(context)
+                                    .onSuccess { release ->
+                                        updateStatus = release?.let { found.format(it.version) } ?: upToDate
+                                        release?.let(AppUpdater::showPrompt)
+                                    }.onFailure { updateStatus = checkFailed }
+                            }
+                        }
+                    },
+                ),
+                Material3SettingsItem(
+                    title = { Text(stringResource(R.string.er_update_notify)) },
+                    description = { Text(stringResource(R.string.er_update_notify_desc)) },
+                    trailingContent = { Switch(checked = notifyUpdates, onCheckedChange = onNotifyUpdates) },
+                    onClick = { onNotifyUpdates(!notifyUpdates) },
+                ),
+            ),
+        )
 
         Material3SettingsGroup(
             title = stringResource(R.string.er_about_license),
