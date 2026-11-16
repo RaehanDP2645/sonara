@@ -92,6 +92,8 @@ internal fun LyricsLine(
     isActiveLine: Boolean,
     romanized: String? = null,
     latinOnly: Boolean = false,
+    // Worked out once for the page (playerTextAccent), not per line: lines redraw every frame.
+    translationColor: Color = Color.Unspecified,
     bgVisible: Boolean,
     isSelected: Boolean,
     isSelectionModeActive: Boolean,
@@ -279,7 +281,7 @@ internal fun LyricsLine(
                             fontWeight = FontWeight.Medium,
                             fontStyle = FontStyle.Italic,
                             letterSpacing = 0.sp,
-                            color = playerTextAccent(MaterialTheme.colorScheme.primary).copy(alpha = animatedAlpha * TRANSLATION_ALPHA),
+                            color = translationColor.copy(alpha = animatedAlpha * TRANSLATION_ALPHA),
                         ),
                         modifier = Modifier.fillMaxWidth().padding(top = 6.dp)
                     )

@@ -51,4 +51,13 @@ class ReleaseCheckTest {
         assertNull(optional.minVersion)
         assertFalse(optional.isRequiredFor("1.0.0"))
     }
+
+    @Test
+    fun updateDialogShowsWhatsNewWithoutTheDownloadTable() {
+        val notes =
+            "## Sonara 2.5.2\n\n### Download\n\n| System | File |\n|---|---|\n| Android | `Sonara.apk` |\n\n" +
+                "### What's new\n\n- **Better** lyrics\n\n### Fixes\n\n- A [bug](https://x.y) fixed\n\n### Good to know\n\n- SmartScreen tip"
+        assertEquals("What's new\n• Better lyrics\n\nFixes\n• A bug fixed", ReleaseCheck.highlights(notes))
+        assertEquals("Line one\n• item", ReleaseCheck.highlights("Line one\n| a | b |\n|---|---|\n- item"))
+    }
 }

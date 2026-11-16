@@ -103,6 +103,40 @@ object ReleaseCheck {
         )
     }
 
+    /**
+     * What an update dialog shows of release [notes]: only the "What's new" and "Fixes" sections
+     * when the notes have them (the download table and install tips are for the release page),
+     * otherwise the notes without tables; then without Markdown marks, links as their text.
+     */
+    fun highlights(notes: String): String {
+        val sections = Regex("""(?m)^#{2,6}\s*(.+)$""").findAll(notes).toList()
+        val wanted =
+            sections.mapIndexedNotNull { i, heading ->
+                val title = heading.groupValues[1].trim()
+                if (!Regex("(?i)what'?s new|new in|fix|change").containsMatchIn(title)) return@mapIndexedNotNull null
+                val end = sections.getOrNull(i + 1)?.range?.first ?: notes.length
+                title to notes.substring(heading.range.last + 1, end).trim()
+            }
+        val text =
+            if (wanted.isNotEmpty()) {
+                wanted.joinToString("\n\n") { (title, body) -> if (wanted.size == 1) body else "$title\n$body" }
+            } else {
+                notes
+            }
+        return text
+            .lines()
+            .filterNot { line -> line.trimStart().startsWith("|") || line.trim().matches(Regex("""-{3,}|\*{3,}""")) }
+            .joinToString("\n")
+            .replace(Regex("<!--.*?-->", RegexOption.DOT_MATCHES_ALL), "")
+            .replace(Regex("""\[([^\]]+)]\([^)]+\)"""), "$1")
+            .replace(Regex("""(?m)^#{1,6}\s*"""), "")
+            .replace("**", "")
+            .replace("`", "")
+            .replace(Regex("""(?m)^\s*[-*]\s+"""), "• ")
+            .replace(Regex("\n{3,}"), "\n\n")
+            .trim()
+    }
+
     /** Whether [latest] is a higher version than [current]: "2.10.0" > "2.9.1"; "2.4.2+abc" is 2.4.2. */
     fun isNewer(
         latest: String,

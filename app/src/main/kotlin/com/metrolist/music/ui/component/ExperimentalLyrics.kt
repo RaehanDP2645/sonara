@@ -189,6 +189,8 @@ fun ExperimentalLyrics(
     // so lyrics take the theme's text colour. The old blur/gradient styles forced white, which
     // vanished on the light theme; that setting is no longer offered.
     val expressiveAccent = MaterialTheme.colorScheme.onSurface
+    // Translations: a light shade of the song's colour, worked out once here for every line.
+    val translationColor = playerTextAccent(MaterialTheme.colorScheme.primary)
 
     var activeLineIndices by remember { mutableStateOf(emptySet<Int>()) }
     var scrollTargetIndex by rememberSaveable { mutableIntStateOf(-1) }
@@ -731,6 +733,7 @@ fun ExperimentalLyrics(
                                         translation = translations[item.text.trim()],
                                         romanized = romanizations[item.text.trim()],
                                         latinOnly = latinOnly,
+                                        translationColor = translationColor,
                                         isActiveLine = isActiveLine,
                                         bgVisible = bgVisible, isSelected = selectedIndices.contains(index),
                                         isSelectionModeActive = isSelectionModeActive, currentPositionState = currentPositionState,

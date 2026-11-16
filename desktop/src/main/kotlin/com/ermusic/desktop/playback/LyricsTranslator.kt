@@ -45,7 +45,9 @@ import javax.crypto.spec.SecretKeySpec
 import java.util.concurrent.TimeUnit
 
 object LyricsTranslator {
-    private const val MODE = "Sonara-3"
+    // The lowest prompt version (the proxy's Cache::PROMPT_VERSION) a saved translation may come
+    // from, as on the phone; the file name carries it, so older ones are made again.
+    private const val MODE = "Sonara-4"
     private const val REQUEST_LINES = 300
     private const val TRANSLATE_PATH = "/api/translate"
     private const val DEFAULT_PAUSE_SECONDS = 60L
@@ -162,7 +164,7 @@ object LyricsTranslator {
         val lines = checkNotNull(parse(text)) { "unexpected answer" }.mapNotNull { (n, line) -> batch.getOrNull(n - 1)?.let { it to line } }.toMap()
         // The proxy says which prompt made it (none before 2.5.1: the old one).
         val prompt = ((runCatching { json.parseToJsonElement(text) }.getOrNull() as? JsonObject)?.get("prompt") as? JsonPrimitive)?.contentOrNull
-        return lines to (prompt == MODE)
+        return lines to ((prompt?.removePrefix("Sonara-")?.toIntOrNull() ?: 0) >= MODE.removePrefix("Sonara-").toInt())
     }
 
     /** Hex HMAC-SHA256 of `POST`, the path, the time, the install and the body's SHA-256, as the phone signs. */

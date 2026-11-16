@@ -59,10 +59,11 @@ import javax.crypto.spec.SecretKeySpec
 
 object LyricsTranslator {
     /** Stored in [com.metrolist.music.db.entities.LyricsEntity.translationMode]. */
-    // The proxy's prompt version (Cache::PROMPT_VERSION). Bumped when the prompt changes, so
-    // translations saved by an older prompt are redone. A translation is saved under the version
-    // the proxy says it made it with, so one from a proxy not yet updated is asked for again later.
-    const val MODE = "Sonara-3"
+    // The lowest prompt version (the proxy's Cache::PROMPT_VERSION) a saved translation may come
+    // from; older ones are made again. Bumped when the prompt improves enough to redo them. A
+    // translation is saved under the version the proxy reports, so a newer proxy never makes
+    // this app ask again and again, and one not yet updated is asked again later.
+    const val MODE = "Sonara-4"
 
     /** A song's translation and the prompt version the proxy made it with. */
     class Translated(val lines: Map<String, String>, val mode: String)
@@ -151,8 +152,8 @@ object LyricsTranslator {
                     }
                 Translated(
                     parts.fold(emptyMap()) { all, part -> all + part.lines },
-                    // Every part must come from the current prompt for the whole to count as it.
-                    if (parts.all { it.mode == MODE }) MODE else OLD_MODE,
+                    // The whole counts as its oldest part.
+                    parts.map { it.mode }.minByOrNull(::promptVersion) ?: OLD_MODE,
                 )
             }.onFailure {
                 if (it is CancellationException) throw it
@@ -216,7 +217,11 @@ object LyricsTranslator {
     fun isCurrent(
         entity: LyricsEntity?,
         target: String,
-    ): Boolean = entity != null && entity.translationLanguage == target && entity.translationMode == MODE
+    ): Boolean =
+        entity != null && entity.translationLanguage == target && promptVersion(entity.translationMode) >= promptVersion(MODE)
+
+    /** "Sonara-4" is 4; anything else, 0. */
+    internal fun promptVersion(mode: String): Int = mode.removePrefix("Sonara-").toIntOrNull() ?: 0
 
     /**
      * When the AI translator is on, translates the saved lyrics of [songId] into the chosen

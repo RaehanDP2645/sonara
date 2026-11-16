@@ -47,10 +47,13 @@ in `docs/perf.md`; never write numbers that were not measured.
   `ui/player/LyricsPage.kt`, Settings > Lyrics). Off by default; when on, lyrics are translated
   as soon as they are fetched, into the chosen language (English by default). The model gets
   the whole song numbered and must answer for every line, with "" for lines already in the
-  target language or only "ooh"s; lines it still leaves out are asked for once more. The prompt
+  target language or only "ooh"s; lines it still leaves out, copies back unchanged though they
+  are not in the target language, or leaves "" in another script are asked for once more. The prompt
   (`web/private/src/Translator.php`, with a register note per language in `Languages.php`) asks
-  for natural sung language, not word for word. Changing the prompt: bump `Cache::PROMPT_VERSION`
-  and `MODE` in both apps' `LyricsTranslator.kt`, so old translations are redone. Both apps ask the owner's proxy (`web/`, PHP, deployed at
+  for natural sung language, not word for word. The proxy reports its `Cache::PROMPT_VERSION`
+  ("Sonara-N") with each answer and the apps save it; a saved translation counts while its N is at
+  least the app's `MODE`. To redo every translation: bump `PROMPT_VERSION`, and `MODE` in both
+  apps' `LyricsTranslator.kt` to the same N. Both apps ask the owner's proxy (`web/`, PHP, deployed at
   `sonara.rashiiddsr.my.id/api`; see `web/DEPLOY.md`), never an AI provider: the proxy holds the
   providers' keys encrypted, tries Gemini, Groq, OpenRouter and others in the owner's order, keeps
   every song's translation for everyone and limits each install and address. Requests are signed
@@ -74,8 +77,13 @@ in `docs/perf.md`; never write numbers that were not measured.
   only by better ones (timed first, then a higher source), and lose their translation then.
   Lyrics from the first source, timed, and the user's own ("Manual") are never looked up again.
 - Sheets and dialogs over the open player (lyrics, queue, menus, sleep timer, Cast, details)
-  take the song's colour (`ui/component/PlayerSheet.kt`, `PlayerTint`); elsewhere they keep the
-  theme's surface.
+  take the song's colour (`ui/component/PlayerSheet.kt`, `PlayerTint`), with a light top edge and
+  a darker scrim so they never blend into the player; elsewhere they keep the theme's surface.
+  No colour animations there: lyric lines redraw every frame, so colours are worked out once per
+  page and passed down.
+- Update dialogs show only a release's "What's new" and "Fixes" sections
+  (`ReleaseCheck.highlights`). Older apps show the whole notes, so keep release notes free of
+  tables: lists only.
 - The app always speaks English, whatever the phone's language, with no setting to change it
   (owner's choice, `utils/AppLanguage.kt`). The Indonesian strings stay in `values-in/` for now.
 - Sign-in is required (`WelcomeScreen`): one Google sign-in page in a sheet, inside the app, because

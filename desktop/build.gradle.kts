@@ -42,7 +42,7 @@ fun sealKey(key: String): String {
 }
 
 /** Bumped for every installer; the app shows it, and the updater compares it with the newest release. */
-val appVersion = "2.5.1"
+val appVersion = "2.5.2"
 
 val secretsDir = layout.buildDirectory.dir("generated/secrets")
 val generateSecrets by tasks.registering {

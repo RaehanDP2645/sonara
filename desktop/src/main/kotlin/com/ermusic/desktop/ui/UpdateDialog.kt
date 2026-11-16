@@ -25,6 +25,7 @@ import androidx.compose.ui.window.DialogProperties
 import com.ermusic.desktop.Os
 import com.ermusic.desktop.update.DesktopUpdater
 import com.metrolist.music.update.Release
+import com.metrolist.music.update.ReleaseCheck
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -54,9 +55,9 @@ fun UpdateDialog(release: Release) {
                 Text(
                     if (required) "This version no longer works. Install Sonara ${release.version} to go on." else "You have ${DesktopUpdater.currentVersion}.",
                     style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                if (release.notes.isNotBlank()) {
+                if (ReleaseCheck.highlights(release.notes).isNotBlank()) {
                     Column(Modifier.fillMaxWidth().heightIn(max = 320.dp).padding(top = Spacing.M).verticalScroll(rememberScrollState())) {
-                        Text(plainNotes(release.notes), style = MaterialTheme.typography.bodyMedium)
+                        Text(ReleaseCheck.highlights(release.notes), style = MaterialTheme.typography.bodyMedium)
                     }
                 }
                 when (download) {
@@ -101,13 +102,3 @@ private fun installHint(): String =
         Os.isMac -> "The disk image is open: drag Sonara to Applications, replacing the old one."
         else -> "The update is open in your system's installer."
     }
-
-/** Release notes are Markdown: shown without the marks (**, #, `), links as their text. */
-private fun plainNotes(markdown: String): String =
-    markdown
-        .replace(Regex("\\[([^\\]]+)]\\([^)]+\\)"), "$1")
-        .replace(Regex("(?m)^#{1,6}\\s*"), "")
-        .replace("**", "")
-        .replace("`", "")
-        .replace(Regex("(?m)^\\s*[-*]\\s+"), "• ")
-        .trim()

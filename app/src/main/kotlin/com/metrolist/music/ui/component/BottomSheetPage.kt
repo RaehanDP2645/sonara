@@ -5,6 +5,7 @@
 
 package com.metrolist.music.ui.component
 
+import androidx.compose.material3.BottomSheetDefaults
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
@@ -72,6 +73,7 @@ fun BottomSheetPage(
         sheetState = sheetState,
         // Painted by PlayerSheetColumn: the theme's surface, or the song's colour over the player.
         containerColor = playerSheetColor(background),
+        scrimColor = playerScrimColor(BottomSheetDefaults.ScrimColor),
         contentColor = MaterialTheme.colorScheme.onSurface,
         dragHandle = null,
         modifier = modifier.fillMaxHeight()
