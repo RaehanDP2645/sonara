@@ -140,12 +140,28 @@ object DesktopUpdater {
     fun install(file: File) {
         runCatching {
             when {
-                Os.isWindows -> ProcessBuilder("msiexec", "/i", file.absolutePath).start()
-                Os.isMac -> ProcessBuilder("open", file.absolutePath).start()
+                Os.isWindows -> handOver(listOf("cmd", "/c", "start", "Sonara update", "msiexec", "/i", file.absolutePath))
+                Os.isMac -> handOver(listOf("open", file.absolutePath))
                 Os.isLinux && file.name.endsWith(".AppImage", ignoreCase = true) -> replaceAppImage(file)
                 Os.isLinux -> ProcessBuilder("xdg-open", file.absolutePath).start()
             }
         }.onFailure { download = Download.Failed }
+    }
+
+    /**
+     * Starts the installer and then quits, so it has the app's files to itself.
+     *
+     * On Windows the installer's first step is to close Sonara and everything Sonara started.
+     * Run straight from here, the installer was one of those and went down with the app, so
+     * nothing ever appeared; "start" hands it to Windows instead, which keeps it. On a Mac the
+     * copy in Applications cannot be replaced while it runs.
+     */
+    private fun handOver(command: List<String>) {
+        ProcessBuilder(command).start()
+        Thread {
+            Thread.sleep(QUIT_AFTER_MS)
+            exitProcess(0)
+        }.start()
     }
 
     /** Puts the new AppImage where this one is and starts it; this one then quits. */
@@ -158,4 +174,7 @@ object DesktopUpdater {
         ProcessBuilder(current.absolutePath).start()
         exitProcess(0)
     }
+
+    /** How long the installer gets to be on screen before Sonara closes itself. */
+    private const val QUIT_AFTER_MS = 2500L
 }

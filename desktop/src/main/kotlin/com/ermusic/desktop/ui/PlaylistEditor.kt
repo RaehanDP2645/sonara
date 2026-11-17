@@ -390,9 +390,12 @@ fun ImportPlaylistDialog(app: AppState) {
     var problem by remember { mutableStateOf<String?>(null) }
     var source by remember { mutableStateOf<YouTubePlaylistEditor.ImportSource?>(null) }
     var invite by remember { mutableStateOf<YouTubePlaylistEditor.CollaborationInvite?>(null) }
-    // Songs looked for on YouTube Music so far, while another platform's list is matched.
-    var progress by remember { mutableStateOf<Pair<Int, Int>?>(null) }
     var showMissing by remember { mutableStateOf(false) }
+    // On: the name and description come from the playlist behind the link, where it has them.
+    // Off: they are typed here.
+    var useDetails by remember { mutableStateOf(true) }
+    var name by remember { mutableStateOf("") }
+    var description by remember { mutableStateOf("") }
 
     fun check() {
         busy = true
@@ -409,11 +412,10 @@ fun ImportPlaylistDialog(app: AppState) {
             } else {
                 val result =
                     if (ExternalImport.platformOf(text) != null) {
-                        YouTubePlaylistEditor.checkExternalImport(SonaraApi, text) { done, total -> progress = done to total }
+                        YouTubePlaylistEditor.checkExternalImport(SonaraApi, text)
                     } else {
                         YouTubePlaylistEditor.checkImport(text)
                     }
-                progress = null
                 source = result.source.takeIf { result.error == null }
                 problem = result.error?.let(::importProblem)
             }
@@ -427,11 +429,13 @@ fun ImportPlaylistDialog(app: AppState) {
         scope.launch(Dispatchers.IO) {
             // From YouTube, YouTube copies it; from another platform, the songs found are added.
             val external = found.external
+            val title = if (useDetails) found.title else name.trim()
+            val details = if (useDetails) found.description.orEmpty() else description.trim()
             val id =
                 if (external == null) {
-                    YouTubePlaylistEditor.create(found.title, "", PlaylistPrivacy.PRIVATE, found.playlistId)
+                    YouTubePlaylistEditor.create(title, details, PlaylistPrivacy.PRIVATE, found.playlistId)
                 } else {
-                    YouTubePlaylistEditor.create(found.title, "", PlaylistPrivacy.PRIVATE)?.also {
+                    YouTubePlaylistEditor.create(title, details, PlaylistPrivacy.PRIVATE)?.also {
                         YouTubePlaylistEditor.addSongs(it, external.matched.videoIds)
                     }
                 }
@@ -441,7 +445,7 @@ fun ImportPlaylistDialog(app: AppState) {
             } else {
                 app.importing = false
                 app.playlistChanged()
-                app.showToast("Imported ${found.title}")
+                app.showToast("Imported $title")
                 app.go(Route.Playlist(id))
             }
         }
@@ -476,6 +480,28 @@ fun ImportPlaylistDialog(app: AppState) {
                     invite = null
                     problem = null
                 }, label = { Text("Playlist or invite link") }, singleLine = true, modifier = Modifier.fillMaxWidth().onFocusChanged { app.typing = it.isFocused })
+                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().clickable { useDetails = !useDetails }.handCursor()) {
+                    Column(Modifier.weight(1f)) {
+                        Text("Use the playlist's own details", style = MaterialTheme.typography.bodyMedium)
+                        Text("Take the name and description from the link", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                    Switch(checked = useDetails, onCheckedChange = { useDetails = it }, modifier = Modifier.handCursor())
+                }
+                if (!useDetails) {
+                    OutlinedTextField(
+                        name,
+                        { name = it },
+                        label = { Text("Name") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth().onFocusChanged { app.typing = it.isFocused },
+                    )
+                    OutlinedTextField(
+                        description,
+                        { description = it },
+                        label = { Text("Description (optional)") },
+                        modifier = Modifier.fillMaxWidth().onFocusChanged { app.typing = it.isFocused },
+                    )
+                }
                 source?.let { found ->
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Art(found.thumbnail, Modifier.size(Size.ListRow), ErShape.Small, pixels = 200)
@@ -521,9 +547,6 @@ fun ImportPlaylistDialog(app: AppState) {
                         }
                     }
                 }
-                progress?.let { (done, total) ->
-                    Text("Finding songs on YouTube Music · $done of $total", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                }
                 invite?.let { target ->
                     Column {
                         Text(target.title ?: "Collaborate on this playlist", style = MaterialTheme.typography.titleSmall)
@@ -537,7 +560,7 @@ fun ImportPlaylistDialog(app: AppState) {
             val found = source
             val target = invite
             when {
-                found != null -> TextButton(enabled = !busy, modifier = Modifier.handCursor(), onClick = { import(found) }) { Text(if (busy) "Importing…" else "Import") }
+                found != null -> TextButton(enabled = !busy && (useDetails || name.isNotBlank()), modifier = Modifier.handCursor(), onClick = { import(found) }) { Text(if (busy) "Importing…" else "Import") }
                 target != null -> TextButton(enabled = !busy, modifier = Modifier.handCursor(), onClick = { join(target) }) { Text(if (busy) "Joining…" else "Join") }
                 else -> TextButton(enabled = !busy && link.isNotBlank(), modifier = Modifier.handCursor(), onClick = ::check) { Text(if (busy) "Checking…" else "Check link") }
             }

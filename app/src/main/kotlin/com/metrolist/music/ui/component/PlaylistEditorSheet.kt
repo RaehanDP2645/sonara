@@ -189,7 +189,8 @@ private fun ImportSection(
     link: TextFieldState,
     check: YouTubePlaylistEditor.ImportCheck?,
     checking: Boolean,
-    progress: Pair<Int, Int>?,
+    useDetails: Boolean,
+    onUseDetails: (Boolean) -> Unit,
     onCheck: () -> Unit,
 ) {
     // Same tap handling as the title and description, so the keyboard stays up between them.
@@ -205,12 +206,7 @@ private fun ImportSection(
             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri, imeAction = ImeAction.Done),
             onKeyboardAction = { if (link.text.isNotBlank() && !checking) onCheck() },
             isError = error != null,
-            supportingText =
-                when {
-                    error != null -> { { Text(stringResource(importErrorText(error))) } }
-                    progress != null -> { { Text(stringResource(R.string.er_import_matching, progress.first, progress.second)) } }
-                    else -> null
-                },
+            supportingText = error?.let { shown -> { Text(stringResource(importErrorText(shown))) } },
             trailingIcon = {
                 if (checking) {
                     CircularProgressIndicator(strokeWidth = Spacing.XXS, modifier = Modifier.size(Size.IconSmall))
@@ -230,6 +226,24 @@ private fun ImportSection(
             ),
             modifier = Modifier.fillMaxWidth().focusOnTap(linkFocus, scope),
         )
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(ErShape.Small)
+                .clickable { onUseDetails(!useDetails) }
+                .padding(start = Spacing.S, top = Spacing.S, bottom = Spacing.S),
+        ) {
+            Column(Modifier.weight(1f)) {
+                Text(stringResource(R.string.er_import_use_details), style = MaterialTheme.typography.bodyLarge)
+                Text(
+                    stringResource(R.string.er_import_use_details_desc),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            Switch(checked = useDetails, onCheckedChange = onUseDetails)
+        }
         check?.source?.takeIf { error == null }?.let { source ->
             Row(
                 verticalAlignment = Alignment.CenterVertically,
@@ -448,13 +462,17 @@ fun PlaylistEditorSheet(
     val importLink = rememberTextFieldState()
     var importCheck by remember { mutableStateOf<YouTubePlaylistEditor.ImportCheck?>(null) }
     var checkingImport by remember { mutableStateOf(false) }
-    // Songs looked for on YouTube Music so far, while a Spotify, Deezer or Apple Music list is matched.
-    var importProgress by remember { mutableStateOf<Pair<Int, Int>?>(null) }
+    // On: the name and description come from the playlist behind the link, where it has them.
+    // Off: they are typed here, as for a new playlist.
+    var useSourceDetails by rememberSaveable { mutableStateOf(true) }
     // A changed link has to be checked again.
     LaunchedEffect(importLink) {
         snapshotFlow { importLink.text.toString() }.collect { importCheck = null }
     }
     val importSource = importCheck?.takeIf { it.error == null }?.source
+
+    /** Whether the name and description are typed here rather than taken from the link. */
+    val manualDetails = !importing || !useSourceDetails
 
     LaunchedEffect(Unit) {
         loadDetails?.invoke()?.let { fresh ->
@@ -521,7 +539,7 @@ fun PlaylistEditorSheet(
                         TextButton(
                             // While YouTube's description is not read yet, saving could replace it with
                             // an empty one, so a change waits for it; nothing changed closes at once.
-                            enabled = title.isNotBlank() && (detailsKnown || !changed) && (!importing || importSource != null),
+                            enabled = (title.isNotBlank() || !manualDetails) && (detailsKnown || !changed) && (!importing || importSource != null),
                             onClick = {
                                 if (!changed) {
                                     onDismiss()
@@ -549,8 +567,14 @@ fun PlaylistEditorSheet(
                                     }
                                     val description = descriptionState.text.toString().trim()
                                     val source = importSource
+                                    val fromSource = source != null && !manualDetails
                                     val saved = if (importing && source != null && onImport != null) {
-                                        onImport(title.trim(), description, privacy, source)
+                                        onImport(
+                                            if (fromSource) source.title else title.trim(),
+                                            if (fromSource) source.description.orEmpty() else description,
+                                            privacy,
+                                            source,
+                                        )
                                     } else {
                                         onDone(title.trim(), description, privacy, newCover)
                                     }
@@ -634,24 +658,21 @@ fun PlaylistEditorSheet(
                         link = importLink,
                         check = importCheck,
                         checking = checkingImport,
-                        progress = importProgress,
+                        useDetails = useSourceDetails,
+                        onUseDetails = { useSourceDetails = it },
                         onCheck = {
                             checkingImport = true
-                            importProgress = null
                             appScope.launch {
                                 val text = importLink.text.toString()
                                 val result =
                                     if (ExternalImport.platformOf(text) != null) {
-                                        YouTubePlaylistEditor.checkExternalImport(SonaraApi.forApp(context), text) { done, total ->
-                                            appScope.launch(Dispatchers.Main) { importProgress = done to total }
-                                        }
+                                        YouTubePlaylistEditor.checkExternalImport(SonaraApi.forApp(context), text)
                                     } else {
                                         YouTubePlaylistEditor.checkImport(text)
                                     }
                                 withContext(Dispatchers.Main) {
                                     importCheck = result
                                     checkingImport = false
-                                    importProgress = null
                                 }
                             }
                         },
@@ -670,6 +691,7 @@ fun PlaylistEditorSheet(
                         .then(InputTransformation.maxLength(TITLE_MAX))
                 }
                 Column(Modifier.padding(horizontal = Spacing.L)) {
+                    if (manualDetails) {
                     TextField(
                         state = titleState,
                         inputTransformation = titleInput,
@@ -688,6 +710,7 @@ fun PlaylistEditorSheet(
                         colors = fieldColors,
                         modifier = Modifier.fillMaxWidth().heightIn(min = Size.ListRow).focusOnTap(descriptionFocus, scope),
                     )
+                    }
                     Spacer(Modifier.height(Spacing.S))
                     Box {
                         Row(

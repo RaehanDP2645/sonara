@@ -96,7 +96,16 @@ in `docs/perf.md`; never write numbers that were not measured.
   read by the proxy (`/api/import`, Spotify's key in the admin page) and matched on YouTube Music
   in the app (`utils/ExternalImport.kt`): songs only, never music videos, by ISRC when given,
   else title + artists with the length and album to choose; what isn't found is listed and not
-  added. Every failure has its own message (`YouTubePlaylistEditor.ImportError`).
+  added. Every failure has its own message (`YouTubePlaylistEditor.ImportError`). Spotify's Web
+  API refuses apps whose owner has no Premium (403 on everything, confirmed in the admin Test), so
+  playlists and albums are read from Spotify's public embed page instead (`SpotifyEmbed.php`, 100
+  tracks of a playlist, no ISRC); credentials in the admin page are optional and tried first.
+  Songs still not found and without an ISRC are looked up once more: `/api/isrc` asks Deezer's
+  open search (`IsrcSource.php`, no key, answers kept) and the app searches again with the ISRC,
+  which names one recording exactly. Only the finished list is shown, never a per-song count.
+  Import asks for a link and one switch, "Use the playlist's own details" (on): the name and
+  description come from the source (`ImportSource.description`, every platform and YouTube); off,
+  they are typed in the sheet.
 - Collaboration needs a playlist that isn't private: turning it on makes a private playlist
   unlisted first (`CollaborateSheet`); choosing Private in the editor shows a red line and turns
   collaboration off before saving.
@@ -105,7 +114,11 @@ in `docs/perf.md`; never write numbers that were not measured.
   for a playlist only in Sonara). No spacers between a menu's groups.
 - The mini player can't be swiped away (that stopped the music); it stays until the queue ends.
 - Updates are looked up at launch and every 6 hours while the app runs (desktop: in the tray
-  too); "Install unknown apps" allowed in Android's settings carries on with the install.
+  too); "Install unknown apps" allowed in Android's settings carries on with the install. On
+  Windows the installer is handed to `cmd /c start` and the app quits 2.5 s later: the MSI's first
+  step closes Sonara, and `taskkill /T` took the installer down with it (so `wix/main.wxs` kills
+  by name only, never the tree). A Mac quits the same way, so the copy in Applications can be
+  replaced.
 - Tablets: held upright, a tablet is the phone app exactly (bottom bar, phone player); the
   tablet layouts (`WindowLayout.wide`: rail, side-panel player, two panes) are landscape only.
 - Update dialogs show only a release's "What's new" and "Fixes" sections

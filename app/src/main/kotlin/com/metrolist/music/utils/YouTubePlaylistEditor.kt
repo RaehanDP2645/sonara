@@ -59,6 +59,8 @@ object YouTubePlaylistEditor {
         val owner: String?,
         val trackCount: Int?,
         val thumbnail: String?,
+        /** What the source says the playlist is about; used when the details are taken from it. */
+        val description: String? = null,
         val external: External? = null,
     )
 
@@ -129,7 +131,12 @@ object YouTubePlaylistEditor {
                 ?.optString("description")?.substringAfter('\u2022', "")?.trim()?.takeIf { it.isNotBlank() }
         val thumbnail = header.optJSONObject("thumbnail")?.let { findObject(it, "thumbnail") }
             ?.optJSONArray("thumbnails")?.let { it.optJSONObject(it.length() - 1)?.optString("url") }
-        val source = ImportSource(id, title, owner, count, thumbnail)
+        val description = findObject(header, "musicDescriptionShelfRenderer")
+            ?.optJSONObject("description")
+            ?.let(::runsText)
+            ?.trim()
+            ?.takeIf { it.isNotBlank() }
+        val source = ImportSource(id, title, owner, count, thumbnail, description)
         return when {
             count == 0 -> ImportCheck(source, ImportError.EMPTY)
             count != null && count > MAX_PLAYLIST_SONGS -> ImportCheck(source, ImportError.TOO_BIG)
@@ -144,14 +151,13 @@ object YouTubePlaylistEditor {
     suspend fun checkExternalImport(
         api: ExternalImport.Api,
         link: String,
-        progress: (done: Int, total: Int) -> Unit = { _, _ -> },
     ): ImportCheck {
         val playlist =
             ExternalImport.resolve(api, link).getOrElse { failure ->
                 val problem = (failure as? ExternalImport.ImportProblem)?.problem ?: ExternalImport.Problem.SOURCE_ERROR
                 return ImportCheck(error = errorOf(problem))
             }
-        val matched = ExternalImport.match(playlist.tracks, progress)
+        val matched = ExternalImport.match(playlist.tracks, api)
         val source =
             ImportSource(
                 playlistId = "",
@@ -159,6 +165,7 @@ object YouTubePlaylistEditor {
                 owner = playlist.owner,
                 trackCount = matched.videoIds.size,
                 thumbnail = playlist.image,
+                description = playlist.description,
                 external = External(playlist.platform, playlist.total, playlist.truncated, matched),
             )
         return if (matched.videoIds.isEmpty()) ImportCheck(source, ImportError.NOTHING_FOUND) else ImportCheck(source)

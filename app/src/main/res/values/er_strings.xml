@@ -168,7 +168,6 @@
     <string name="er_import_err_source">The service didn\'t answer as expected. Try again later.</string>
     <string name="er_import_err_rate_limited">Too many imports in a short time. Wait a few minutes and try again.</string>
     <string name="er_import_err_nothing_found">None of these songs could be found on YouTube Music</string>
-    <string name="er_import_matching">Finding songs on YouTube Music · %1$d of %2$d</string>
     <string name="er_import_found">%1$d of %2$d songs found</string>
     <string name="er_import_first_500">Only the first %1$d songs could be read</string>
     <plurals name="er_import_missing">
@@ -271,4 +270,6 @@
     <string name="er_shared_from">Shared from Sonara</string>
     <string name="er_share_listen">Listen on</string>
     <string name="er_song_unavailable">This song isn\'t available</string>
+    <string name="er_import_use_details">Use the playlist\'s own details</string>
+    <string name="er_import_use_details_desc">Take the name and description from the link</string>
 </resources>
