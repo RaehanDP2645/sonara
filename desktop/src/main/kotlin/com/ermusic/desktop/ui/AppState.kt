@@ -5,6 +5,7 @@
 
 package com.ermusic.desktop.ui
 
+import com.metrolist.music.utils.SonaraLinks
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -362,8 +363,9 @@ class AppState(val player: Player, val scope: CoroutineScope, val onSignOut: () 
         }
     }
 
+    /** Copies Sonara's own link for [link] (SonaraLinks), which opens the same YouTube Music item. */
     fun copyLink(link: String) {
-        Toolkit.getDefaultToolkit().systemClipboard.setContents(StringSelection(link), null)
+        Toolkit.getDefaultToolkit().systemClipboard.setContents(StringSelection(SonaraLinks.share(link)), null)
         showToast("Link copied")
     }
 

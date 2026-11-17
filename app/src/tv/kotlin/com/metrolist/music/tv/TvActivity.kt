@@ -51,6 +51,7 @@ class TvActivity : FragmentActivity() {
     private var playerConnection: PlayerConnection? = null
     private var playerConnectionSnapshot by mutableStateOf<PlayerConnection?>(null)
     private var isServiceBound = false
+    private var link by mutableStateOf<String?>(null)
 
     private val serviceConnection =
         object : ServiceConnection {
@@ -72,15 +73,22 @@ class TvActivity : FragmentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         WindowCompat.setDecorFitsSystemWindows(window, false)
+        TvDictionary.install(this)
+        link = intent?.dataString
         setContent {
             TvRoot(
                 playerConnection = playerConnectionSnapshot,
                 database = database,
-                downloadUtil = downloadUtil,
-                syncUtils = syncUtils,
-                networkObserver = networkObserver,
+                link = link,
+                onLinkHandled = { link = null },
             )
         }
+    }
+
+    // A song or playlist picked on the home screen row while Sonara TV is open.
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        link = intent.dataString
     }
 
     override fun onStart() {

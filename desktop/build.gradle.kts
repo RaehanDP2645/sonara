@@ -42,7 +42,7 @@ fun sealKey(key: String): String {
 }
 
 /** Bumped for every installer; the app shows it, and the updater compares it with the newest release. */
-val appVersion = "2.6.0"
+val appVersion = "2.6.5"
 
 val secretsDir = layout.buildDirectory.dir("generated/secrets")
 val generateSecrets by tasks.registering {
@@ -81,6 +81,8 @@ val fromAndroid by tasks.registering(Sync::class) {
     from("../app/src/main/kotlin/com/metrolist") {
         include("kugou/**", "lrclib/**", "paxsenix/**", "music/betterlyrics/**")
         include("music/utils/YouTubeWebSession.kt", "music/utils/YouTubePlaylistEditor.kt")
+        // Sonara share links and playlist import from other platforms, as on the phone.
+        include("music/utils/SonaraLinks.kt", "music/utils/ExternalImport.kt")
         // The updater's release check, shared with the phone (desktop/.../update/DesktopUpdater.kt).
         include("music/update/ReleaseCheck.kt")
         listOf(

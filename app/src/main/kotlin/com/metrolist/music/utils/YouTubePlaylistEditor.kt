@@ -48,16 +48,41 @@ object YouTubePlaylistEditor {
         return id
     }
 
-    /** A playlist found from a link, shown so the user can check it is the right one. */
+    /**
+     * A playlist found from a link, shown so the user can check it is the right one. One from
+     * another platform ([external]) has no YouTube id: its songs, found on YouTube Music, are
+     * added to the new playlist instead.
+     */
     data class ImportSource(
         val playlistId: String,
         val title: String,
         val owner: String?,
         val trackCount: Int?,
         val thumbnail: String?,
+        val external: External? = null,
     )
 
-    enum class ImportError { NOT_A_PLAYLIST, MIX, NOT_FOUND, EMPTY, TOO_BIG, OFFLINE }
+    /** From Spotify, Deezer or Apple Music: what was found on YouTube Music and what wasn't. */
+    data class External(
+        val platform: ExternalImport.Platform,
+        val total: Int,
+        val truncated: Boolean,
+        val matched: ExternalImport.Matched,
+    )
+
+    enum class ImportError {
+        NOT_A_PLAYLIST,
+        MIX,
+        NOT_FOUND,
+        EMPTY,
+        TOO_BIG,
+        OFFLINE,
+        SPOTIFY_EDITORIAL,
+        NOT_CONFIGURED,
+        SOURCE_ERROR,
+        RATE_LIMITED,
+        NOTHING_FOUND,
+    }
 
     /** [source] when the link points to a playlist that can be copied, otherwise [error]. */
     data class ImportCheck(
@@ -76,8 +101,13 @@ object YouTubePlaylistEditor {
         return input.takeIf { Regex("""(PL|OLAK5uy_|RD|LM)[A-Za-z0-9_-]*""").matches(it) }
     }
 
-    /** Reads the playlist behind [link] the way the account sees it, to show it before importing. */
-    suspend fun checkImport(link: String): ImportCheck {
+    /**
+     * Reads the playlist behind [link] (a Sonara share link counts as the YouTube Music one it
+     * stands for) the way the account sees it, to show it before importing. Spotify, Deezer and
+     * Apple Music links go to [checkExternalImport].
+     */
+    suspend fun checkImport(rawLink: String): ImportCheck {
+        val link = SonaraLinks.toYouTube(rawLink) ?: rawLink
         val id = playlistIdFromLink(link) ?: return ImportCheck(error = ImportError.NOT_A_PLAYLIST)
         // Mixes (RD...) are made for each account as it listens and change all the time.
         if (id.startsWith("RD")) return ImportCheck(error = ImportError.MIX)
@@ -107,6 +137,46 @@ object YouTubePlaylistEditor {
         }
     }
 
+    /**
+     * Reads a Spotify, Deezer or Apple Music playlist through the proxy ([api]) and finds its
+     * songs on YouTube Music ([progress] counts them); every way it can fail has its own error.
+     */
+    suspend fun checkExternalImport(
+        api: ExternalImport.Api,
+        link: String,
+        progress: (done: Int, total: Int) -> Unit = { _, _ -> },
+    ): ImportCheck {
+        val playlist =
+            ExternalImport.resolve(api, link).getOrElse { failure ->
+                val problem = (failure as? ExternalImport.ImportProblem)?.problem ?: ExternalImport.Problem.SOURCE_ERROR
+                return ImportCheck(error = errorOf(problem))
+            }
+        val matched = ExternalImport.match(playlist.tracks, progress)
+        val source =
+            ImportSource(
+                playlistId = "",
+                title = playlist.title,
+                owner = playlist.owner,
+                trackCount = matched.videoIds.size,
+                thumbnail = playlist.image,
+                external = External(playlist.platform, playlist.total, playlist.truncated, matched),
+            )
+        return if (matched.videoIds.isEmpty()) ImportCheck(source, ImportError.NOTHING_FOUND) else ImportCheck(source)
+    }
+
+    private fun errorOf(problem: ExternalImport.Problem): ImportError =
+        when (problem) {
+            ExternalImport.Problem.UNSUPPORTED_LINK -> ImportError.NOT_A_PLAYLIST
+            ExternalImport.Problem.NOT_FOUND -> ImportError.NOT_FOUND
+            ExternalImport.Problem.SPOTIFY_EDITORIAL -> ImportError.SPOTIFY_EDITORIAL
+            ExternalImport.Problem.EMPTY -> ImportError.EMPTY
+            ExternalImport.Problem.NOT_CONFIGURED -> ImportError.NOT_CONFIGURED
+            ExternalImport.Problem.SOURCE_ERROR -> ImportError.SOURCE_ERROR
+            ExternalImport.Problem.RATE_LIMITED -> ImportError.RATE_LIMITED
+            ExternalImport.Problem.OFFLINE -> ImportError.OFFLINE
+            ExternalImport.Problem.NOTHING_FOUND -> ImportError.NOTHING_FOUND
+        }
+
     private fun runsText(node: JSONObject?): String {
         val runs = node?.optJSONArray("runs") ?: return ""
         return (0 until runs.length()).joinToString("") { runs.optJSONObject(it)?.optString("text").orEmpty() }
@@ -125,6 +195,22 @@ object YouTubePlaylistEditor {
             .put(JSONObject().put("action", "ACTION_SET_PLAYLIST_PRIVACY").put("playlistPrivacy", privacy.name))
         val body = JSONObject().put("playlistId", playlistId.removePrefix("VL")).put("actions", actions)
         return YouTubeWebSession.post("browse/edit_playlist", body)?.optString("status") == "STATUS_SUCCEEDED"
+    }
+
+    /**
+     * Only the visibility. Collaboration needs a playlist that isn't private, so turning it on
+     * makes a private playlist unlisted first (CollaborateSheet), as YouTube Music itself does.
+     */
+    suspend fun setPrivacy(
+        playlistId: String,
+        privacy: PlaylistPrivacy,
+    ): Boolean {
+        val bare = playlistId.removePrefix("VL")
+        val actions = JSONArray().put(JSONObject().put("action", "ACTION_SET_PLAYLIST_PRIVACY").put("playlistPrivacy", privacy.name))
+        val ok = YouTubeWebSession.post("browse/edit_playlist", JSONObject().put("playlistId", bare).put("actions", actions))
+            ?.optString("status") == "STATUS_SUCCEEDED"
+        if (ok) cachedDetails(bare)?.let { rememberDetails(bare, it.copy(privacy = privacy)) }
+        return ok
     }
 
     /** Drops the custom cover; YouTube goes back to its collage of the first songs. */
@@ -339,6 +425,24 @@ object YouTubePlaylistEditor {
         return YouTubeWebSession.post("browse/edit_playlist", body)?.optString("status") == "STATUS_SUCCEEDED"
     }
 
+    /**
+     * Adds [videoIds] in order, in batches like YouTube Music's own "Save to playlist" of many
+     * songs; answers how many YouTube took.
+     */
+    suspend fun addSongs(
+        playlistId: String,
+        videoIds: List<String>,
+    ): Int {
+        var added = 0
+        videoIds.chunked(ADD_BATCH).forEach { batch ->
+            val actions = JSONArray()
+            batch.forEach { actions.put(JSONObject().put("action", "ACTION_ADD_VIDEO").put("addedVideoId", it)) }
+            val body = JSONObject().put("playlistId", playlistId.removePrefix("VL")).put("actions", actions)
+            if (YouTubeWebSession.post("browse/edit_playlist", body)?.optString("status") == "STATUS_SUCCEEDED") added += batch.size
+        }
+        return added
+    }
+
     /** Current description and visibility, read from the playlist's edit header. */
     private class CachedDetails(
         val details: PlaylistDetails,
@@ -477,6 +581,9 @@ object YouTubePlaylistEditor {
 
     /** YouTube's own limit for one playlist. */
     const val MAX_PLAYLIST_SONGS = 5000
+
+    /** Songs per edit when adding many at once. */
+    private const val ADD_BATCH = 50
     private const val COLLABORATION_CACHE_MS = 5 * 60 * 1000L
     private const val DETAILS_CACHE_MS = 5 * 60 * 1000L
 

@@ -408,7 +408,7 @@ class MetrolistWidgetManager @Inject constructor(
     }
 
     private fun getOpenAppIntent(): PendingIntent {
-        val intent = Intent(context, MainActivity::class.java)
+        val intent = Intent(context, com.metrolist.music.AppEntry.activity)
         return PendingIntent.getActivity(
             context,
             0,

@@ -37,6 +37,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
@@ -58,7 +59,8 @@ private const val POLL_MS = 5_000L
 private const val RETRY_MS = 5_000L
 
 @Composable
-fun TvSignIn() {
+fun TvSignIn(onBack: () -> Unit) {
+    androidx.activity.compose.BackHandler(onBack = onBack)
     val context = LocalContext.current
     var session by remember { mutableStateOf<String?>(null) }
     var code by remember { mutableStateOf<String?>(null) }
@@ -101,7 +103,7 @@ fun TvSignIn() {
         }
     }
 
-    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+    Box(Modifier.fillMaxSize().padding(horizontal = Tv.SafeX, vertical = Tv.SafeY), contentAlignment = Alignment.Center) {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.Center) {
             Column(Modifier.widthIn(max = 520.dp)) {
                 Icon(painterResource(R.drawable.logo_mark), contentDescription = null, tint = Color.Unspecified, modifier = Modifier.size(56.dp))
@@ -120,12 +122,14 @@ fun TvSignIn() {
                     Text(stringResource(R.string.tv_sign_in_retry), style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.error)
                 }
                 Spacer(Modifier.height(36.dp))
-                TvButton(R.drawable.account, stringResource(R.string.tv_sign_in_google), onClick = { google = true })
+                val first = androidx.compose.runtime.remember { androidx.compose.ui.focus.FocusRequester() }
+                LaunchedEffect(Unit) { runCatching { first.requestFocus() } }
+                TvButton(R.drawable.account, stringResource(R.string.tv_sign_in_google), onClick = { google = true }, modifier = Modifier.focusRequester(first))
             }
-            Spacer(Modifier.width(80.dp))
+            Spacer(Modifier.width(72.dp))
             Box(
                 Modifier
-                    .size(320.dp)
+                    .size(300.dp)
                     .clip(RoundedCornerShape(28.dp))
                     .background(Color.White)
                     .padding(22.dp),

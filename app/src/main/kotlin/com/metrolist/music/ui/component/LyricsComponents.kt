@@ -5,6 +5,7 @@
 
 package com.metrolist.music.ui.component
 
+import com.metrolist.music.utils.SonaraLinks
 import com.metrolist.music.ui.theme.Size
 import com.metrolist.music.ui.theme.Spacing
 import com.metrolist.music.ui.theme.ErShape
@@ -191,7 +192,7 @@ internal fun LyricsShareDialog(
                         val intent = Intent().apply {
                             action = Intent.ACTION_SEND
                             type = "text/plain"
-                            putExtra(Intent.EXTRA_TEXT, "\"$txt\"\n\n$title - $arts\nhttps://music.youtube.com/watch?v=$songId")
+                            putExtra(Intent.EXTRA_TEXT, "\"$txt\"\n\n$title - $arts\n${SonaraLinks.song(songId)}")
                         }
                         context.startActivity(Intent.createChooser(intent, context.getString(R.string.share_lyrics)))
                         onDismiss()

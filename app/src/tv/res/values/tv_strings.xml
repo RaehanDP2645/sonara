@@ -1,14 +1,21 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!-- Sonara TV only. -->
 <resources>
-    <string name="tv_on">On</string>
-    <string name="tv_off">Off</string>
-    <string name="tv_more">More</string>
-    <string name="tv_all_settings">All settings</string>
-    <string name="tv_playing">Playing</string>
-    <string name="tv_paused">Paused</string>
+    <string name="tv_welcome_line">Your music, on the big screen.</string>
+    <string name="tv_get_started">Get started</string>
+    <string name="tv_only_title">Sonara TV is for TVs</string>
+    <string name="tv_only_line">On a phone or tablet, get the Sonara app instead.</string>
+    <string name="tv_get_phone_app">Get Sonara</string>
+    <string name="tv_new_releases">New releases</string>
+    <string name="tv_moods_genres">Moods and genres</string>
+    <string name="tv_couldnt_load">Couldn\'t load this. Check the connection and try again.</string>
+    <string name="tv_add_home">Add to home screen</string>
+    <string name="tv_added_home">Added to the home screen</string>
+    <string name="tv_up_next">Up next</string>
     <string name="tv_minutes">%1$d min</string>
-    <string name="tv_search_lyrics_again">Search again</string>
+    <string name="tv_sign_out_confirm">Press again to sign out</string>
+    <string name="tv_crossfade_length">Crossfade length</string>
+    <string name="tv_channel_name">Sonara</string>
     <string name="tv_sign_in_title">Sign in to Sonara</string>
     <string name="tv_sign_in_steps">On your phone, open Sonara, go to Settings, Sign in on a TV, and scan this code or type it in.</string>
     <string name="tv_sign_in_google">Sign in with Google here</string>

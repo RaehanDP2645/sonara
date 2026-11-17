@@ -91,7 +91,9 @@ fun CreatePlaylistDialog(
                 syncWithYouTube = true,
                 description = description,
                 privacy = privacy,
-                sourcePlaylistId = source.playlistId,
+                // From YouTube, YouTube copies it; from another platform, the songs found are added.
+                sourcePlaylistId = source.playlistId.takeIf { source.external == null },
+                videoIds = source.external?.matched?.videoIds.orEmpty(),
             )
             withContext(Dispatchers.Main) {
                 ErToast.show(context, if (playlistId != null) R.string.er_playlist_imported else R.string.er_playlist_create_failed)

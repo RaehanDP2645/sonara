@@ -5,6 +5,12 @@
 
 package com.ermusic.desktop.ui
 
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.layout.heightIn
+import com.ermusic.desktop.playback.SonaraApi
+import com.metrolist.music.utils.ExternalImport
+import com.metrolist.music.utils.SonaraLinks
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -358,12 +364,18 @@ private fun CollabSwitch(title: String, description: String, checked: Boolean, e
 
 private fun importProblem(error: ImportError): String =
     when (error) {
-        ImportError.NOT_A_PLAYLIST -> "This isn't a YouTube Music playlist link."
+        ImportError.NOT_A_PLAYLIST -> "This isn't a playlist or album link from YouTube Music, Spotify, Deezer or Apple Music."
         ImportError.MIX -> "Mixes are made for each account and can't be imported."
-        ImportError.NOT_FOUND -> "Playlist not found, or it is private."
+        ImportError.NOT_FOUND -> "Playlist not found, or it is private. Make it public and try again."
         ImportError.EMPTY -> "This playlist has no songs."
         ImportError.TOO_BIG -> "More than 5,000 songs, over YouTube's limit for one playlist."
         ImportError.OFFLINE -> "Couldn't connect, try again."
+        ImportError.SPOTIFY_EDITORIAL ->
+            "Spotify doesn't let apps read its own playlists (like Today's Top Hits or Discover Weekly). Copy the songs into a playlist of yours and share that."
+        ImportError.NOT_CONFIGURED -> "Importing from Spotify isn't available right now. Try again later."
+        ImportError.SOURCE_ERROR -> "The service didn't answer as expected. Try again later."
+        ImportError.RATE_LIMITED -> "Too many imports in a short time. Wait a few minutes and try again."
+        ImportError.NOTHING_FOUND -> "None of these songs could be found on YouTube Music."
     }
 
 /** The token of a collaboration invite link, when [link] is one. */
@@ -378,20 +390,30 @@ fun ImportPlaylistDialog(app: AppState) {
     var problem by remember { mutableStateOf<String?>(null) }
     var source by remember { mutableStateOf<YouTubePlaylistEditor.ImportSource?>(null) }
     var invite by remember { mutableStateOf<YouTubePlaylistEditor.CollaborationInvite?>(null) }
+    // Songs looked for on YouTube Music so far, while another platform's list is matched.
+    var progress by remember { mutableStateOf<Pair<Int, Int>?>(null) }
+    var showMissing by remember { mutableStateOf(false) }
 
     fun check() {
         busy = true
         problem = null
         source = null
         invite = null
-        val text = link.trim()
+        // A Sonara share or invite link stands for the YouTube Music one.
+        val text = link.trim().let { SonaraLinks.toYouTube(it) ?: it }
         scope.launch(Dispatchers.IO) {
             val token = inviteToken(text)
             val id = YouTubePlaylistEditor.playlistIdFromLink(text)
             if (token != null && id != null) {
                 invite = YouTubePlaylistEditor.invite(id, token)
             } else {
-                val result = YouTubePlaylistEditor.checkImport(text)
+                val result =
+                    if (ExternalImport.platformOf(text) != null) {
+                        YouTubePlaylistEditor.checkExternalImport(SonaraApi, text) { done, total -> progress = done to total }
+                    } else {
+                        YouTubePlaylistEditor.checkImport(text)
+                    }
+                progress = null
                 source = result.source.takeIf { result.error == null }
                 problem = result.error?.let(::importProblem)
             }
@@ -403,7 +425,16 @@ fun ImportPlaylistDialog(app: AppState) {
         busy = true
         problem = null
         scope.launch(Dispatchers.IO) {
-            val id = YouTubePlaylistEditor.create(found.title, "", PlaylistPrivacy.PRIVATE, found.playlistId)
+            // From YouTube, YouTube copies it; from another platform, the songs found are added.
+            val external = found.external
+            val id =
+                if (external == null) {
+                    YouTubePlaylistEditor.create(found.title, "", PlaylistPrivacy.PRIVATE, found.playlistId)
+                } else {
+                    YouTubePlaylistEditor.create(found.title, "", PlaylistPrivacy.PRIVATE)?.also {
+                        YouTubePlaylistEditor.addSongs(it, external.matched.videoIds)
+                    }
+                }
             busy = false
             if (id == null) {
                 problem = "YouTube didn't accept the import."
@@ -451,10 +482,47 @@ fun ImportPlaylistDialog(app: AppState) {
                         Spacer(Modifier.width(Spacing.M))
                         Column {
                             Text(found.title, style = MaterialTheme.typography.titleSmall, maxLines = 2, overflow = TextOverflow.Ellipsis)
-                            val details = listOfNotNull(found.owner?.let { "By $it" }, found.trackCount?.let { "$it songs" }).joinToString(" · ")
+                            val external = found.external
+                            val details =
+                                listOfNotNull(
+                                    external?.platform?.label,
+                                    found.owner?.let { "By $it" },
+                                    if (external != null) {
+                                        "${found.trackCount ?: 0} of ${external.matched.videoIds.size + external.matched.missing.size} songs found"
+                                    } else {
+                                        found.trackCount?.let { "$it songs" }
+                                    },
+                                ).joinToString(" · ")
                             if (details.isNotEmpty()) Text(details, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            if (external?.truncated == true) Text("The first 500 of ${external.total} songs", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
                     }
+                    // The tracks no song was found for, folded under a count; they are not added.
+                    found.external?.matched?.missing?.takeIf { it.isNotEmpty() }?.let { missing ->
+                        val count = missing.size
+                        Text(
+                            if (count == 1) "1 song not found, it won't be added" else "$count songs not found, they won't be added",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.error,
+                            modifier = Modifier.clickable { showMissing = !showMissing }.handCursor(),
+                        )
+                        if (showMissing) {
+                            Column(Modifier.heightIn(max = 160.dp).verticalScroll(rememberScrollState())) {
+                                missing.forEach { track ->
+                                    Text(
+                                        listOf(track.title, track.artists.joinToString(", ")).filter { it.isNotBlank() }.joinToString(" — "),
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis,
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+                progress?.let { (done, total) ->
+                    Text("Finding songs on YouTube Music · $done of $total", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
                 invite?.let { target ->
                     Column {

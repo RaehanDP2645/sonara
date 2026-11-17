@@ -81,6 +81,24 @@ in `docs/perf.md`; never write numbers that were not measured.
   a darker scrim so they never blend into the player; elsewhere they keep the theme's surface.
   No colour animations there: lyric lines redraw every frame, so colours are worked out once per
   page and passed down.
+- Sharing (requested by the owner): every share and copied link is Sonara's own
+  (`utils/SonaraLinks.kt`, shared with the desktop): `https://sonara.rashiiddsr.my.id/open/?song=|
+  playlist=|album=|artist=<YouTube id>`, `&jct=` for a collaboration invite. The site keeps nothing
+  and loads nothing: with the app installed Android opens it (verified App Links,
+  `.well-known/assetlinks.json`, and `sonara://open/?…`) as the YouTube Music link it stands for
+  (`SonaraLinks.toYouTube` in `handleDeepLinkIntent`); otherwise `/open/` offers Sonara or YouTube
+  Music. Opening music.youtube.com links in the app still works.
+- Playlist import (Library > + > Import playlist, and the desktop's Import): YouTube Music links as
+  before (YouTube copies the playlist); Spotify, Deezer and Apple Music playlists and albums are
+  read by the proxy (`/api/import`, Spotify's key in the admin page) and matched on YouTube Music
+  in the app (`utils/ExternalImport.kt`): songs only, never music videos, by ISRC when given,
+  else title + artists with the length and album to choose; what isn't found is listed and not
+  added. Every failure has its own message (`YouTubePlaylistEditor.ImportError`).
+- Collaboration needs a playlist that isn't private: turning it on makes a private playlist
+  unlisted first (`CollaborateSheet`); choosing Private in the editor shows a red line and turns
+  collaboration off before saving.
+- Tablets: held upright, a tablet is the phone app exactly (bottom bar, phone player); the
+  tablet layouts (`WindowLayout.wide`: rail, side-panel player, two panes) are landscape only.
 - Update dialogs show only a release's "What's new" and "Fixes" sections
   (`ReleaseCheck.highlights`). Older apps show the whole notes, so keep release notes free of
   tables: lists only.
@@ -96,16 +114,27 @@ Requested by the owner as an app of its own: package `com.ermusic.tv`, released 
 `TV-Sonara-<version>.apk` (never starting with "Sonara", so phones' updaters never pick it), built
 with `./gradlew :app:assembleTvRelease`. It is a product flavor of this same app, so the player
 (MusicService), library, lyrics, romanization, translator, lyrics refresh and updater are the
-phone's own code; nothing crucial may be missing on the TV compared with the phone. Only the
-screens differ, in `app/src/tv/`:
-- `TvActivity` (LEANBACK_LAUNCHER; `MainActivity` is kept but not launchable there; `AppEntry`
-  per flavor says which activity notifications and the media session open).
-- `TvRoot`: rail (Home, Search, Library, Settings), pages, the now-playing bar, Now Playing,
-  and the idle screen (spinning record with the cover, plus the lyrics) after 45 s without the
-  remote while playing. The NavHost also registers the phone's `navigationBuilder`, so album,
-  artist, playlist, radio, search results and the full settings are the phone's pages.
-- Focus is drawn by `tvFocusable` (bigger, light outline). Crossfade is on (5 s) by default on
-  the TV only (`CrossfadeEnabledDefault`).
+phone's own code; nothing crucial may be missing on the TV compared with the phone. The screens
+are the TV's own, in `app/src/tv/`, laid out like the big TV music apps:
+- TV only: the manifest requires leanback, has only `TvActivity` (LEANBACK_LAUNCHER) and drops the
+  phone's activities, widgets, camera and local-file permissions, so R8 strips the phone UI; on a
+  phone `TvRoot` shows "Sonara TV is for TVs". `AppEntry` per flavor says which activity
+  notifications and the media session open.
+- Size: the Kuromoji dictionary is left out of the TV APK and fetched once from Maven Central,
+  checked by SHA-256 (`TvDictionary`, `LyricsRomanizer.tokenizerFactory`); x86 libraries are left
+  out (`androidComponents` in `app/build.gradle.kts`).
+- Start: splash, Welcome (Get started), sign-in, then the app. Top bar: what's playing (left,
+  opens Now Playing), the tabs Home, Search, Browse, Library (middle), the account (right, opens
+  Settings). Pages keep the safe area (`Tv.SafeX`/`SafeY` in `TvUi.kt`); no mini player.
+- Albums, playlists, Liked songs, artists and moods open `TvCollection`; albums and playlists
+  have Add to home screen (`TvChannel`, a preview channel; Google TV may not show it).
+- Now Playing (`TvNowPlaying`): cover, time bar (left/right seek 10 s), controls, like, radio,
+  sleep timer, and Up next or Lyrics. The idle screen (`TvIdle`, after 45 s without the remote
+  while playing) is the spinning record with the lyrics beside it, or alone when there are none.
+- Lyrics (`TvLyrics`): timed lyrics follow the song; untimed ones just stand still.
+- Settings are all on one page (`TvSettings`), with real switches; no "All settings".
+- Focus is drawn by `tvFocus` (bigger, light outline). Crossfade is on (5 s) by default on the
+  TV only (`CrossfadeEnabledDefault`).
 - Sign-in: a QR code and a rotating 6-digit code for Sonara on a phone (Settings > Sign in on a
   TV, `TvLinkScreen`), relayed by the proxy (`/api/tv/start|poll|lookup|deliver`) and sealed for
   the TV alone (`tvlink/TvLink.kt`: ECDH P-256, HKDF-SHA256, AES-256-GCM); or Google's own

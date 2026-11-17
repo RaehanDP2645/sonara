@@ -5,6 +5,9 @@
 
 package com.metrolist.music.ui.component
 
+import androidx.compose.ui.text.style.TextOverflow
+import com.metrolist.music.utils.SonaraApi
+import com.metrolist.music.utils.ExternalImport
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.text.input.ImeAction
@@ -186,6 +189,7 @@ private fun ImportSection(
     link: TextFieldState,
     check: YouTubePlaylistEditor.ImportCheck?,
     checking: Boolean,
+    progress: Pair<Int, Int>?,
     onCheck: () -> Unit,
 ) {
     // Same tap handling as the title and description, so the keyboard stays up between them.
@@ -196,11 +200,17 @@ private fun ImportSection(
         TextField(
             state = link,
             label = { Text(stringResource(R.string.er_import_link)) },
+            placeholder = { Text(stringResource(R.string.er_import_link_hint)) },
             lineLimits = TextFieldLineLimits.SingleLine,
             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri, imeAction = ImeAction.Done),
             onKeyboardAction = { if (link.text.isNotBlank() && !checking) onCheck() },
             isError = error != null,
-            supportingText = error?.let { { Text(stringResource(importErrorText(it))) } },
+            supportingText =
+                when {
+                    error != null -> { { Text(stringResource(importErrorText(error))) } }
+                    progress != null -> { { Text(stringResource(R.string.er_import_matching, progress.first, progress.second)) } }
+                    else -> null
+                },
             trailingIcon = {
                 if (checking) {
                     CircularProgressIndicator(strokeWidth = Spacing.XXS, modifier = Modifier.size(Size.IconSmall))
@@ -239,13 +249,57 @@ private fun ImportSection(
                 Spacer(Modifier.width(Spacing.M))
                 Column(Modifier.weight(1f)) {
                     Text(source.title, style = MaterialTheme.typography.titleMedium, maxLines = 2)
+                    val external = source.external
                     val details = listOfNotNull(
+                        external?.platform?.label,
                         source.owner?.let { stringResource(R.string.er_import_owner, it) },
-                        source.trackCount?.let { pluralStringResource(R.plurals.n_song, it, it) },
+                        if (external != null) {
+                            stringResource(R.string.er_import_found, source.trackCount ?: 0, external.matched.videoIds.size + external.matched.missing.size)
+                        } else {
+                            source.trackCount?.let { pluralStringResource(R.plurals.n_song, it, it) }
+                        },
                     ).joinToString(" \u2022 ")
                     if (details.isNotEmpty()) {
                         Text(details, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
+                    if (external?.truncated == true) {
+                        Text(stringResource(R.string.er_import_first_500, external.total), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                }
+            }
+            source.external?.matched?.missing?.takeIf { it.isNotEmpty() }?.let { missing -> MissingSongs(missing) }
+        }
+    }
+}
+
+/** The tracks no song was found for, folded under a count; they are not added. */
+@Composable
+private fun MissingSongs(missing: List<ExternalImport.Track>) {
+    var open by remember { mutableStateOf(false) }
+    Column(Modifier.fillMaxWidth()) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier.fillMaxWidth().clip(ErShape.Small).clickable { open = !open }.padding(vertical = Spacing.S),
+        ) {
+            Text(
+                pluralStringResource(R.plurals.er_import_missing, missing.size, missing.size),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.error,
+                modifier = Modifier.weight(1f),
+            )
+            Icon(painterResource(if (open) R.drawable.expand_less else R.drawable.expand_more), contentDescription = null)
+        }
+        if (open) {
+            Column(Modifier.heightIn(max = Size.HeaderArt).verticalScroll(rememberScrollState())) {
+                missing.forEach { track ->
+                    Text(
+                        listOf(track.title, track.artists.joinToString(", ")).filter { it.isNotBlank() }.joinToString(" \u2014 "),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.padding(vertical = Spacing.XXS),
+                    )
                 }
             }
         }
@@ -260,6 +314,11 @@ private fun importErrorText(error: YouTubePlaylistEditor.ImportError): Int =
         YouTubePlaylistEditor.ImportError.EMPTY -> R.string.er_import_err_empty
         YouTubePlaylistEditor.ImportError.TOO_BIG -> R.string.er_import_err_too_big
         YouTubePlaylistEditor.ImportError.OFFLINE -> R.string.er_import_err_offline
+        YouTubePlaylistEditor.ImportError.SPOTIFY_EDITORIAL -> R.string.er_import_err_spotify_editorial
+        YouTubePlaylistEditor.ImportError.NOT_CONFIGURED -> R.string.er_import_err_not_configured
+        YouTubePlaylistEditor.ImportError.SOURCE_ERROR -> R.string.er_import_err_source
+        YouTubePlaylistEditor.ImportError.RATE_LIMITED -> R.string.er_import_err_rate_limited
+        YouTubePlaylistEditor.ImportError.NOTHING_FOUND -> R.string.er_import_err_nothing_found
     }
 
 /** Drops line breaks (a pasted title stays on one line); Enter alone calls [onEnter]. */
@@ -389,6 +448,8 @@ fun PlaylistEditorSheet(
     val importLink = rememberTextFieldState()
     var importCheck by remember { mutableStateOf<YouTubePlaylistEditor.ImportCheck?>(null) }
     var checkingImport by remember { mutableStateOf(false) }
+    // Songs looked for on YouTube Music so far, while a Spotify, Deezer or Apple Music list is matched.
+    var importProgress by remember { mutableStateOf<Pair<Int, Int>?>(null) }
     // A changed link has to be checked again.
     LaunchedEffect(importLink) {
         snapshotFlow { importLink.text.toString() }.collect { importCheck = null }
@@ -469,6 +530,23 @@ fun PlaylistEditorSheet(
                                 saving = true
                                 // Finishes even if the screen goes away; the sheet closes only when YouTube took it.
                                 appScope.launch {
+                                    // Private ends collaboration: YouTube takes no private playlist with
+                                    // collaborators, so it is turned off before the new visibility.
+                                    val open = collaboration
+                                    if (editing && privacy == PlaylistPrivacy.PRIVATE && open?.enabled == true) {
+                                        val closed = YouTubePlaylistEditor.changeCollaboration(open, YouTubePlaylistEditor.CollaborationChange.DISABLE)
+                                        if (closed == null) {
+                                            withContext(Dispatchers.Main) {
+                                                saving = false
+                                                ErToast.show(context, R.string.er_playlist_save_failed)
+                                            }
+                                            return@launch
+                                        }
+                                        withContext(Dispatchers.Main) {
+                                            collaboration = closed
+                                            onCollaboration(closed)
+                                        }
+                                    }
                                     val description = descriptionState.text.toString().trim()
                                     val source = importSource
                                     val saved = if (importing && source != null && onImport != null) {
@@ -556,13 +634,24 @@ fun PlaylistEditorSheet(
                         link = importLink,
                         check = importCheck,
                         checking = checkingImport,
+                        progress = importProgress,
                         onCheck = {
                             checkingImport = true
+                            importProgress = null
                             appScope.launch {
-                                val result = YouTubePlaylistEditor.checkImport(importLink.text.toString())
+                                val text = importLink.text.toString()
+                                val result =
+                                    if (ExternalImport.platformOf(text) != null) {
+                                        YouTubePlaylistEditor.checkExternalImport(SonaraApi.forApp(context), text) { done, total ->
+                                            appScope.launch(Dispatchers.Main) { importProgress = done to total }
+                                        }
+                                    } else {
+                                        YouTubePlaylistEditor.checkImport(text)
+                                    }
                                 withContext(Dispatchers.Main) {
                                     importCheck = result
                                     checkingImport = false
+                                    importProgress = null
                                 }
                             }
                         },
@@ -628,6 +717,14 @@ fun PlaylistEditorSheet(
                             }
                         }
                     }
+                    if (editing && privacy == PlaylistPrivacy.PRIVATE && collaboration?.enabled == true) {
+                        Text(
+                            stringResource(R.string.er_private_ends_collaboration),
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.error,
+                            modifier = Modifier.padding(horizontal = Spacing.S, vertical = Spacing.XS),
+                        )
+                    }
                     if (editing && collaboratePlaylistId != null) {
                         Row(
                             verticalAlignment = Alignment.CenterVertically,
@@ -657,6 +754,12 @@ fun PlaylistEditorSheet(
             onState = {
                 collaboration = it
                 onCollaboration(it)
+            },
+            privacy = privacy,
+            // YouTube now has it unlisted: the editor shows that and won't save it back as private.
+            onPrivacyChanged = { now ->
+                privacy = now
+                baseline = baseline?.copy(privacy = now)
             },
             onDismiss = { showCollaborate = false },
         )

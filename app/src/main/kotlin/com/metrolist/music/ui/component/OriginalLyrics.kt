@@ -5,6 +5,7 @@
 
 package com.metrolist.music.ui.component
 
+import com.metrolist.music.utils.SonaraLinks
 import android.annotation.SuppressLint
 import android.app.Activity
 import android.content.Intent
@@ -1454,8 +1455,7 @@ fun OriginalLyrics(
                                             Intent().apply {
                                                 action = Intent.ACTION_SEND
                                                 type = "text/plain"
-                                                val songLink =
-                                                    "https://music.youtube.com/watch?v=${mediaMetadata?.id}"
+                                                val songLink = SonaraLinks.song(mediaMetadata?.id.orEmpty())
                                                 // Use the potentially multi-line lyricsText here
                                                 putExtra(
                                                     Intent.EXTRA_TEXT,

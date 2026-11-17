@@ -622,11 +622,12 @@ class MainActivity : FragmentActivity() {
                 // top bar takes the same margins so its title lines up with the page under it.
                 val windowLayout = rememberWindowLayout()
 
-                // A tablet, upright or not, and a phone turned sideways navigate with the rail,
-                // never with the bottom bar. The rail shows on Home, Browse and Library only: an
+                // In landscape (a tablet, a phone turned sideways) the app navigates with the rail;
+                // upright, a tablet is the phone app, bottom bar included (the owner's choice).
+                // The rail shows on Home, Browse and Library only: an
                 // inner page (settings, a playlist, a radio, search results) and typing a search
                 // get the whole width, with their own way back.
-                val useRail = !forceBottomNav && (isLandscape || windowLayout.wide)
+                val useRail = !forceBottomNav && isLandscape
                 val onMainPage =
                     (currentRoute == null || currentRoute in navigationItemRoutes) &&
                         !(currentRoute == Screens.Search.route && SearchState.typing)
@@ -1372,7 +1373,9 @@ class MainActivity : FragmentActivity() {
         intent: Intent,
         navController: NavHostController,
     ) {
-        val uri = intent.data ?: intent.extras?.getString(Intent.EXTRA_TEXT)?.toUri() ?: return
+        val opened = intent.data ?: intent.extras?.getString(Intent.EXTRA_TEXT)?.toUri() ?: return
+        // A Sonara share link stands for a YouTube Music one: opened as that link (SonaraLinks).
+        val uri = com.metrolist.music.utils.SonaraLinks.toYouTube(opened.toString())?.toUri() ?: opened
         intent.data = null
         intent.removeExtra(Intent.EXTRA_TEXT)
         val coroutineScope = lifecycle.coroutineScope

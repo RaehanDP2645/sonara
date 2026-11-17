@@ -23,6 +23,7 @@ import com.google.android.gms.cast.CastMediaControlIntent
 import com.google.android.gms.cast.MediaInfo
 import com.google.android.gms.cast.MediaLoadRequestData
 import com.google.android.gms.cast.MediaSeekOptions
+import com.google.android.gms.cast.MediaStatus
 import com.google.android.gms.cast.framework.CastContext
 import com.google.android.gms.cast.framework.CastOptions
 import com.google.android.gms.cast.framework.CastSession
@@ -30,6 +31,7 @@ import com.google.android.gms.cast.framework.OptionsProvider
 import com.google.android.gms.cast.framework.SessionManagerListener
 import com.google.android.gms.cast.framework.SessionProvider
 import com.google.android.gms.cast.framework.media.CastMediaOptions
+import com.google.android.gms.cast.framework.media.RemoteMediaClient
 import com.google.android.gms.common.images.WebImage
 import com.metrolist.music.constants.AudioQuality
 import com.metrolist.music.extensions.metadata
@@ -37,12 +39,14 @@ import com.metrolist.music.utils.InnerTubeXPlayer
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import timber.log.Timber
+import kotlin.math.abs
 import com.google.android.gms.cast.MediaMetadata as CastMetadata
 
 private const val LYRICS_TRACK_ID = 1L
@@ -97,6 +101,12 @@ data class CastState(
  * Default Media Receiver, then play/pause, seeks and track changes follow the phone. Queue, skip,
  * like and lyrics therefore keep working unchanged.
  *
+ * The two only stay together if Sonara keeps checking, so besides following the phone's events it
+ * reads the TV's status: a song repeated on the phone starts again on the TV, a TV that stopped on
+ * an error gets a fresh stream where the phone is, a TV that drifted is moved back, and pause or
+ * play pressed on the TV (or in Google Home) reaches the phone. A dropped connection waits for the
+ * TV to come back instead of ending the cast. Crossfade stays off while casting (MusicService).
+ *
  * Known limits of this trial: the stream is fetched twice (phone and TV), downloads are streamed
  * rather than sent from the phone, and some streams may be refused by the TV because YouTube
  * expects headers the receiver cannot send.
@@ -113,8 +123,21 @@ object SonaraCast {
     private var scope: CoroutineScope? = null
     private var appContext: Context? = null
     private var loadJob: Job? = null
+    private var syncJob: Job? = null
     private var lyricsFor: (suspend (String) -> String?)? = null
+
+    /** The song on the TV and what was sent for it, so a repeat reloads without a new lookup. */
     private var loadedId: String? = null
+    private var loadedInfo: MediaInfo? = null
+    private var loadingId: String? = null
+
+    /** Failed loads in a row for [failedId]; after [MAX_FAILURES] that song is left alone. */
+    private var failedId: String? = null
+    private var failures = 0
+
+    /** When Sonara last told the TV something; the TV's status settles for a moment after. */
+    private var lastCommandAt = 0L
+    private var client: RemoteMediaClient? = null
 
     fun context(context: Context): CastContext? {
         castContext?.let { return it }
@@ -144,15 +167,20 @@ object SonaraCast {
                 player?.removeListener(playerListener)
                 player = next
                 next?.addListener(playerListener)
+                // A player that took over (a crossfade) may already be on another song.
+                if (session != null) loadCurrent()
             }
         }
         cast.sessionManager.addSessionManagerListener(sessionListener, CastSession::class.java)
-        cast.sessionManager.currentCastSession?.takeIf { it.isConnected }?.let(::onConnected)
+        cast.sessionManager.currentCastSession?.takeIf { it.isConnected }?.let { onConnected(it, resumed = true) }
     }
 
     fun detach() {
         player?.removeListener(playerListener)
         castContext?.sessionManager?.removeSessionManagerListener(sessionListener, CastSession::class.java)
+        client?.unregisterCallback(remoteCallback)
+        client = null
+        syncJob?.cancel()
         player = null
         scope = null
     }
@@ -191,6 +219,17 @@ object SonaraCast {
     /** After this long without a press, the next one starts again from the TV's own volume. */
     private const val VOLUME_TARGET_KEEP_MS = 1500L
 
+    /** How often the TV is checked against the phone. */
+    private const val SYNC_EVERY_MS = 4_000L
+
+    /** The TV's status is ignored this long after Sonara told it something. */
+    private const val SETTLE_MS = 3_000L
+
+    /** The TV is moved back when it is this far from the phone. */
+    private const val DRIFT_MS = 6_000L
+
+    private const val MAX_FAILURES = 3
+
     fun stopCasting() {
         castContext?.sessionManager?.endCurrentSession(true)
     }
@@ -198,87 +237,212 @@ object SonaraCast {
     private val session get() = castContext?.sessionManager?.currentCastSession?.takeIf { it.isConnected }
     private val remote get() = session?.remoteMediaClient
 
-    private fun onConnected(session: CastSession) {
+    private fun settled() = SystemClock.uptimeMillis() - lastCommandAt > SETTLE_MS
+
+    private fun sent() {
+        lastCommandAt = SystemClock.uptimeMillis()
+    }
+
+    /** The phone's song, when the player is on one. */
+    private fun phoneSong(): String? = player?.currentMediaItem?.metadata?.id
+
+    private fun onConnected(
+        session: CastSession,
+        resumed: Boolean,
+    ) {
         _state.value = _state.value.copy(casting = true, deviceName = session.castDevice?.friendlyName, error = null)
         localVolume.value = 0f
-        loadedId = null
-        loadCurrent(startAt = player?.currentPosition ?: 0L)
+        client?.unregisterCallback(remoteCallback)
+        client = session.remoteMediaClient?.also { it.registerCallback(remoteCallback) }
+        // Back after a dropped connection: the TV may still be playing what it had.
+        val stillOurs = resumed && loadedInfo != null && client?.mediaInfo?.contentId == loadedInfo?.contentId
+        if (!stillOurs) {
+            loadedId = null
+            loadedInfo = null
+        }
+        loadingId = null
+        failures = 0
+        loadCurrent()
+        syncJob?.cancel()
+        syncJob =
+            scope?.launch {
+                while (true) {
+                    delay(SYNC_EVERY_MS)
+                    sync()
+                }
+            }
     }
 
     private fun onDisconnected() {
         loadJob?.cancel()
+        syncJob?.cancel()
+        client?.unregisterCallback(remoteCallback)
+        client = null
         loadedId = null
+        loadedInfo = null
+        loadingId = null
         localVolume.value = 1f
         _state.value = _state.value.copy(casting = false, deviceName = null)
     }
 
-    private fun loadCurrent(startAt: Long) {
+    /**
+     * Puts the phone's song on the TV where the phone is. [again] loads it even when the TV has
+     * it already (a repeat, or a TV that stopped); [fresh] looks the stream up again (the old
+     * one failed or expired).
+     */
+    private fun loadCurrent(
+        again: Boolean = false,
+        fresh: Boolean = false,
+    ) {
         val p = player ?: return
         val item: MediaItem = p.currentMediaItem ?: return
         val meta = item.metadata ?: return
         val context = appContext ?: return
-        if (loadedId == meta.id) return
+        if (!again && (loadedId == meta.id || loadingId == meta.id)) return
+        if (failedId == meta.id && failures >= MAX_FAILURES) return
         loadJob?.cancel()
+        loadingId = meta.id
         loadJob = scope?.launch {
-            val playback = withContext(Dispatchers.IO) {
-                InnerTubeXPlayer.playerResponseForPlayback(
-                    videoId = meta.id,
-                    audioQuality = AudioQuality.HIGH,
-                    connectivityManager = context.getSystemService<ConnectivityManager>()!!,
-                    allowBoundedRange = false,
-                )
-            }.getOrElse {
-                _state.value = _state.value.copy(error = it.message)
+            val reuse = loadedInfo?.takeIf { !fresh && loadedId == meta.id }
+            val info = reuse ?: buildInfo(context, meta) ?: run {
+                loadingId = null
+                failed(meta.id, null)
                 return@launch
             }
-            val castMeta = CastMetadata(CastMetadata.MEDIA_TYPE_MUSIC_TRACK).apply {
-                putString(CastMetadata.KEY_TITLE, meta.title)
-                putString(CastMetadata.KEY_ARTIST, meta.artists.joinToString { it.name })
-                meta.album?.title?.let { putString(CastMetadata.KEY_ALBUM_TITLE, it) }
-                // Large artwork so it stays sharp on a TV.
-                meta.thumbnailUrl?.let { addImage(WebImage(Uri.parse(it.resize(TV_ART_PX, TV_ART_PX)))) }
+            val r = remote ?: run {
+                loadingId = null
+                return@launch
             }
-            // Synced lyrics ride along as a subtitle track. A data: URL avoids serving files from
-            // the phone (the receiver page is HTTPS and would block plain HTTP from the LAN).
-            val vtt = lyricsFor?.invoke(meta.id)
-            val info = MediaInfo.Builder(playback.streamUrl)
-                .setStreamType(MediaInfo.STREAM_TYPE_BUFFERED)
-                .setContentType(playback.format.mimeType.substringBefore(";").trim())
-                .setMetadata(castMeta)
-                .apply {
-                    if (vtt != null) {
-                        setMediaTracks(
-                            listOf(
-                                MediaTrack.Builder(LYRICS_TRACK_ID, MediaTrack.TYPE_TEXT)
-                                    .setName("Lyrics")
-                                    .setSubtype(MediaTrack.SUBTYPE_SUBTITLES)
-                                    .setContentId("data:text/vtt;base64," + Base64.encodeToString(vtt.toByteArray(), Base64.NO_WRAP))
-                                    .setContentType("text/vtt")
-                                    .setLanguage("und")
-                                    .build(),
-                            ),
-                        )
-                        setTextTrackStyle(
-                            TextTrackStyle().apply {
-                                fontScale = 1.3f
-                                foregroundColor = 0xFFFFFFFF.toInt()
-                                backgroundColor = 0x99000000.toInt()
-                                edgeType = TextTrackStyle.EDGE_TYPE_NONE
-                            },
-                        )
-                    }
-                }.build()
+            // Read now, not when asked: finding the stream takes a moment the phone keeps playing.
+            val now = player?.takeIf { phoneSong() == meta.id }
             val request = MediaLoadRequestData.Builder()
                 .setMediaInfo(info)
-                .setAutoplay(player?.playWhenReady ?: true)
-                .setCurrentTime(startAt)
-                .apply { if (vtt != null) setActiveTrackIds(longArrayOf(LYRICS_TRACK_ID)) }
+                .setAutoplay(now?.playWhenReady ?: true)
+                .setCurrentTime(now?.currentPosition ?: 0L)
+                .apply { if (info.mediaTracks?.isNotEmpty() == true) setActiveTrackIds(longArrayOf(LYRICS_TRACK_ID)) }
                 .build()
-            remote?.load(request)?.setResultCallback { result ->
+            sent()
+            r.load(request).setResultCallback { result ->
+                if (loadingId == meta.id) loadingId = null
                 if (result.status.isSuccess) {
                     loadedId = meta.id
+                    loadedInfo = info
+                    if (failedId == meta.id) failures = 0
+                    _state.value = _state.value.copy(error = null)
                 } else {
-                    _state.value = _state.value.copy(error = result.status.statusMessage ?: "Cast load failed (${result.status.statusCode})")
+                    failed(meta.id, result.status.statusMessage ?: "Cast load failed (${result.status.statusCode})")
+                }
+            }
+        }
+    }
+
+    private fun failed(
+        id: String,
+        message: String?,
+    ) {
+        if (failedId != id) {
+            failedId = id
+            failures = 0
+        }
+        failures++
+        loadedId = null
+        _state.value = _state.value.copy(error = message ?: _state.value.error ?: "Cast load failed")
+    }
+
+    private suspend fun buildInfo(
+        context: Context,
+        meta: com.metrolist.music.models.MediaMetadata,
+    ): MediaInfo? {
+        val playback = withContext(Dispatchers.IO) {
+            InnerTubeXPlayer.playerResponseForPlayback(
+                videoId = meta.id,
+                audioQuality = AudioQuality.HIGH,
+                connectivityManager = context.getSystemService<ConnectivityManager>()!!,
+                allowBoundedRange = false,
+            )
+        }.getOrElse {
+            _state.value = _state.value.copy(error = it.message)
+            return null
+        }
+        val castMeta = CastMetadata(CastMetadata.MEDIA_TYPE_MUSIC_TRACK).apply {
+            putString(CastMetadata.KEY_TITLE, meta.title)
+            putString(CastMetadata.KEY_ARTIST, meta.artists.joinToString { it.name })
+            meta.album?.title?.let { putString(CastMetadata.KEY_ALBUM_TITLE, it) }
+            // Large artwork so it stays sharp on a TV.
+            meta.thumbnailUrl?.let { addImage(WebImage(Uri.parse(it.resize(TV_ART_PX, TV_ART_PX)))) }
+        }
+        // Synced lyrics ride along as a subtitle track. A data: URL avoids serving files from
+        // the phone (the receiver page is HTTPS and would block plain HTTP from the LAN).
+        val vtt = lyricsFor?.invoke(meta.id)
+        return MediaInfo.Builder(playback.streamUrl)
+            .setStreamType(MediaInfo.STREAM_TYPE_BUFFERED)
+            .setContentType(playback.format.mimeType.substringBefore(";").trim())
+            .setMetadata(castMeta)
+            .apply {
+                if (vtt != null) {
+                    setMediaTracks(
+                        listOf(
+                            MediaTrack.Builder(LYRICS_TRACK_ID, MediaTrack.TYPE_TEXT)
+                                .setName("Lyrics")
+                                .setSubtype(MediaTrack.SUBTYPE_SUBTITLES)
+                                .setContentId("data:text/vtt;base64," + Base64.encodeToString(vtt.toByteArray(), Base64.NO_WRAP))
+                                .setContentType("text/vtt")
+                                .setLanguage("und")
+                                .build(),
+                        ),
+                    )
+                    setTextTrackStyle(
+                        TextTrackStyle().apply {
+                            fontScale = 1.3f
+                            foregroundColor = 0xFFFFFFFF.toInt()
+                            backgroundColor = 0x99000000.toInt()
+                            edgeType = TextTrackStyle.EDGE_TYPE_NONE
+                        },
+                    )
+                }
+            }.build()
+    }
+
+    /** The song started again on the phone (repeat): start it again on the TV too. */
+    private fun restartOnTv() {
+        val r = remote ?: return
+        val status = r.mediaStatus
+        if (loadedId == phoneSong() && status != null && status.playerState != MediaStatus.PLAYER_STATE_IDLE) {
+            sent()
+            r.seek(MediaSeekOptions.Builder().setPosition(player?.currentPosition ?: 0L).build())
+            if (player?.playWhenReady == true) r.play()
+        } else {
+            loadCurrent(again = true)
+        }
+    }
+
+    /** Brings the TV back to the phone when it went its own way. */
+    private fun sync() {
+        val p = player ?: return
+        val r = remote ?: return
+        val id = phoneSong() ?: return
+        if (id != loadedId) {
+            loadCurrent()
+            return
+        }
+        if (!settled() || loadJob?.isActive == true) return
+        val status = r.mediaStatus ?: return
+        when (status.playerState) {
+            MediaStatus.PLAYER_STATE_IDLE -> {
+                if (!p.playWhenReady) return
+                when (status.idleReason) {
+                    // Ended while the phone has more than a moment of it left: a repeat, or the TV ran ahead.
+                    MediaStatus.IDLE_REASON_FINISHED ->
+                        if (p.duration <= 0 || p.currentPosition + DRIFT_MS < p.duration) loadCurrent(again = true)
+                    MediaStatus.IDLE_REASON_ERROR -> loadCurrent(again = true, fresh = true)
+                    else -> loadCurrent(again = true)
+                }
+            }
+            MediaStatus.PLAYER_STATE_PLAYING, MediaStatus.PLAYER_STATE_PAUSED -> {
+                val drift = r.approximateStreamPosition - p.currentPosition
+                if (abs(drift) > DRIFT_MS) {
+                    sent()
+                    r.seek(MediaSeekOptions.Builder().setPosition(p.currentPosition).build())
                 }
             }
         }
@@ -286,12 +450,20 @@ object SonaraCast {
 
     private val playerListener = object : Player.Listener {
         override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
-            if (session != null) loadCurrent(startAt = 0L)
+            if (session == null) return
+            if (reason == Player.MEDIA_ITEM_TRANSITION_REASON_REPEAT || mediaItem?.metadata?.id == loadedId) restartOnTv() else loadCurrent()
         }
 
         override fun onPlayWhenReadyChanged(playWhenReady: Boolean, reason: Int) {
             val r = remote ?: return
-            if (playWhenReady) r.play() else r.pause()
+            sent()
+            val idle = r.mediaStatus?.playerState?.let { it == MediaStatus.PLAYER_STATE_IDLE } ?: true
+            when {
+                // The TV let the song go (it closes a paused song after a while): load it again.
+                playWhenReady && idle -> loadCurrent(again = true)
+                playWhenReady -> r.play()
+                else -> r.pause()
+            }
         }
 
         override fun onPositionDiscontinuity(
@@ -301,21 +473,44 @@ object SonaraCast {
         ) {
             if (reason != Player.DISCONTINUITY_REASON_SEEK) return
             if (oldPosition.mediaItemIndex != newPosition.mediaItemIndex) return
+            sent()
             remote?.seek(MediaSeekOptions.Builder().setPosition(newPosition.positionMs).build())
         }
     }
 
+    /** Pause and play pressed on the TV or in Google Home reach the phone. */
+    private val remoteCallback = object : RemoteMediaClient.Callback() {
+        override fun onStatusUpdated() {
+            val p = player ?: return
+            val status = remote?.mediaStatus ?: return
+            if (!settled() || loadedId != phoneSong()) return
+            when (status.playerState) {
+                MediaStatus.PLAYER_STATE_PAUSED -> if (p.playWhenReady) p.pause()
+                MediaStatus.PLAYER_STATE_PLAYING -> if (!p.playWhenReady) p.play()
+                MediaStatus.PLAYER_STATE_IDLE ->
+                    if (status.idleReason == MediaStatus.IDLE_REASON_ERROR && p.playWhenReady) loadCurrent(again = true, fresh = true)
+            }
+        }
+    }
+
     private val sessionListener = object : SessionManagerListener<CastSession> {
-        override fun onSessionStarted(session: CastSession, sessionId: String) = onConnected(session)
-        override fun onSessionResumed(session: CastSession, wasSuspended: Boolean) = onConnected(session)
+        override fun onSessionStarted(session: CastSession, sessionId: String) = onConnected(session, resumed = false)
+        override fun onSessionResumed(session: CastSession, wasSuspended: Boolean) = onConnected(session, resumed = true)
         override fun onSessionEnded(session: CastSession, error: Int) = onDisconnected()
-        override fun onSessionSuspended(session: CastSession, reason: Int) = onDisconnected()
+
+        // A dropped connection: the phone stays muted and the TV keeps playing until it is back
+        // (onSessionResumed) or Cast gives up (onSessionEnded).
+        override fun onSessionSuspended(session: CastSession, reason: Int) {
+            loadJob?.cancel()
+            loadingId = null
+        }
+
         override fun onSessionStartFailed(session: CastSession, error: Int) {
             _state.value = _state.value.copy(error = "Could not connect ($error)")
         }
         override fun onSessionStarting(session: CastSession) = Unit
         override fun onSessionEnding(session: CastSession) = Unit
         override fun onSessionResuming(session: CastSession, sessionId: String) = Unit
-        override fun onSessionResumeFailed(session: CastSession, error: Int) = Unit
+        override fun onSessionResumeFailed(session: CastSession, error: Int) = onDisconnected()
     }
 }

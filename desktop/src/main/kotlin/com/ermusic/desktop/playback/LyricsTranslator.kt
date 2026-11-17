@@ -177,7 +177,7 @@ object LyricsTranslator {
     private fun ByteArray.toHex(): String = joinToString("") { "%02x".format(it) }
 
     @Synchronized
-    private fun installId(): String =
+    internal fun installId(): String =
         Settings.installId.value.ifBlank { UUID.randomUUID().toString().also { Settings.installId.value = it } }
 
     private fun parse(content: String): Map<Int, String>? {

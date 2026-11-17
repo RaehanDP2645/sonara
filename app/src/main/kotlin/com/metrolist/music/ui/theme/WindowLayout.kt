@@ -15,10 +15,9 @@ import androidx.compose.ui.unit.dp
 
 /**
  * How much room the window gives, for layouts that change on tablets. Phones are always
- * [WindowWidth.Compact] and portrait (MainActivity locks them). Every tablet navigates with the
- * rail, upright or not (MainActivity: wide or landscape); held upright it keeps the phone player,
- * and only in landscape ([tabletLandscape]) does it get centred pages, the side-panel player and
- * two-pane pages.
+ * [WindowWidth.Compact] and portrait (MainActivity locks them). A tablet held upright is the
+ * phone app as it is; only in landscape ([wide], [tabletLandscape]) does it get the rail, centred
+ * pages, the side-panel player and two-pane pages.
  * Breakpoints follow Material's window size classes (600dp and 840dp).
  */
 @Immutable
@@ -28,8 +27,11 @@ data class WindowLayout(
     val widthDp: Dp,
     val heightDp: Dp,
 ) {
-    /** Tablet-sized: the player shows lyrics and the queue in a side panel, not in sheets. */
-    val wide: Boolean get() = width != WindowWidth.Compact
+    /**
+     * The tablet layouts are on: a tablet-sized window in landscape. Held upright, a tablet is
+     * exactly the phone app (the owner's choice): bottom bar, phone player, phone pages.
+     */
+    val wide: Boolean get() = width != WindowWidth.Compact && landscape
 
     /** A tablet in landscape: the layouts made for it switch on; upright it is a big phone. */
     val tabletLandscape: Boolean get() = wide && landscape

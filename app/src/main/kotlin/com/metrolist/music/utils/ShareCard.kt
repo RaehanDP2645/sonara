@@ -74,7 +74,8 @@ object ShareCard {
             val text = buildString {
                 append(item.title)
                 item.subtitle?.takeIf { it.isNotBlank() }?.let { append(" · ").append(it) }
-                append('\n').append(item.link)
+                // Sonara's own link (SonaraLinks); it still opens the YouTube Music item.
+                append('\n').append(SonaraLinks.share(item.link))
                 append("\n\n").append(app.getString(R.string.er_shared_from))
             }
             val send =

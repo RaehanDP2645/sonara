@@ -156,12 +156,25 @@
     <string name="er_import_link">Playlist link</string>
     <string name="er_import_check">Check link</string>
     <string name="er_import_owner">By %1$s</string>
-    <string name="er_import_err_link">This isn\'t a YouTube Music playlist link</string>
+    <string name="er_import_link_hint">YouTube Music, Spotify, Deezer or Apple Music</string>
+    <string name="er_import_err_link">This isn\'t a playlist or album link from YouTube Music, Spotify, Deezer or Apple Music</string>
     <string name="er_import_err_mix">Mixes are made for each account and can\'t be imported</string>
-    <string name="er_import_err_not_found">Playlist not found, or it is private</string>
+    <string name="er_import_err_not_found">Playlist not found, or it is private. Make it public and try again.</string>
     <string name="er_import_err_empty">This playlist has no songs</string>
     <string name="er_import_err_too_big">More than 5,000 songs, over YouTube\'s limit for one playlist</string>
     <string name="er_import_err_offline">Couldn\'t connect, try again</string>
+    <string name="er_import_err_spotify_editorial">Spotify doesn\'t let apps read its own playlists (like Today\'s Top Hits or Discover Weekly). Copy the songs into a playlist of yours and share that.</string>
+    <string name="er_import_err_not_configured">Importing from Spotify isn\'t available right now. Try again later.</string>
+    <string name="er_import_err_source">The service didn\'t answer as expected. Try again later.</string>
+    <string name="er_import_err_rate_limited">Too many imports in a short time. Wait a few minutes and try again.</string>
+    <string name="er_import_err_nothing_found">None of these songs could be found on YouTube Music</string>
+    <string name="er_import_matching">Finding songs on YouTube Music · %1$d of %2$d</string>
+    <string name="er_import_found">%1$d of %2$d songs found</string>
+    <string name="er_import_first_500">The first 500 of %1$d songs</string>
+    <plurals name="er_import_missing">
+        <item quantity="one">%d song not found, it won\'t be added</item>
+        <item quantity="other">%d songs not found, they won\'t be added</item>
+    </plurals>
     <string name="er_playlist_imported">Playlist imported</string>
     <string name="er_library_device">On device</string>
     <string name="er_device_permission">Allow access to audio files to see the music on this device</string>
@@ -219,6 +232,8 @@
     <string name="er_update_required_title">Update Sonara to keep using it</string>
     <string name="er_update_required">This version no longer works. Install Sonara %1$s to go on.</string>
     <string name="er_update_quit">Close Sonara</string>
+    <string name="er_collaborate_unlists">Turning this on makes the playlist unlisted</string>
+    <string name="er_private_ends_collaboration">Private playlists can\'t have collaborators. Saving turns collaboration off.</string>
     <!-- The "Add to playlist" card in menus: one line (the card's + icon says the rest). -->
     <string name="er_card_playlist">Playlist</string>
     <string name="er_tv_sign_in">Sign in on a TV</string>

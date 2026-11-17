@@ -627,7 +627,7 @@ class PlaylistWidgetManager @Inject constructor(
     }
 
     private fun getOpenAppIntent(): PendingIntent {
-        val intent = Intent(context, MainActivity::class.java)
+        val intent = Intent(context, com.metrolist.music.AppEntry.activity)
         return PendingIntent.getActivity(
             context,
             500,
@@ -637,7 +637,7 @@ class PlaylistWidgetManager @Inject constructor(
     }
 
     private fun getOpenTargetIntent(item: QuickPick): PendingIntent {
-        val intent = Intent(context, MainActivity::class.java).apply {
+        val intent = Intent(context, com.metrolist.music.AppEntry.activity).apply {
             action = MainActivity.ACTION_OPEN_WIDGET_TARGET
             putExtra(MainActivity.EXTRA_WIDGET_TARGET_TYPE, item.targetType)
             putExtra(MainActivity.EXTRA_WIDGET_TARGET_ID, item.targetId)

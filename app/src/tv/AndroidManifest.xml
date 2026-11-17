@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Sonara TV: the same app on Android TV, opened from the TV launcher into its own screens (tv/). -->
+<!-- Sonara TV: an app of its own for Android TV. The phone's screens, widgets and file player are
+     taken out, so the TV app carries only what it uses (tv/). -->
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools">
 
@@ -21,14 +22,22 @@
         android:required="false"
         tools:replace="android:required" />
 
+    <!-- Sonara's row on the TV's home screen (TvChannel). -->
+    <uses-permission android:name="com.android.providers.tv.permission.WRITE_EPG_DATA" />
+    <!-- The phone's camera scanner and file access have no use on a TV. -->
+    <uses-permission android:name="android.permission.CAMERA" tools:node="remove" />
+    <uses-permission android:name="android.permission.READ_MEDIA_AUDIO" tools:node="remove" />
+    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" tools:node="remove" />
+
     <application android:banner="@drawable/tv_banner">
 
-        <!-- The phone's screens stay in the app (shared code) but never open from the launcher. -->
-        <activity
-            android:name=".MainActivity"
-            android:exported="false"
-            android:theme="@style/Theme.Metrolist"
-            tools:node="replace" />
+        <activity android:name=".MainActivity" tools:node="remove" />
+        <activity android:name=".LocalAudioActivity" tools:node="remove" />
+        <activity android:name="com.yalantis.ucrop.UCropActivity" tools:node="remove" />
+        <activity android:name="com.journeyapps.barcodescanner.CaptureActivity" tools:node="remove" />
+        <receiver android:name=".widget.MusicWidgetReceiver" tools:node="remove" />
+        <receiver android:name=".widget.PlaylistWidgetReceiver" tools:node="remove" />
+        <receiver android:name=".widget.TurntableWidgetReceiver" tools:node="remove" />
 
         <activity
             android:name=".tv.TvActivity"
@@ -41,9 +50,11 @@
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LEANBACK_LAUNCHER" />
             </intent-filter>
+            <!-- What the home screen row opens: a song or a playlist (sonara://open/?...). -->
             <intent-filter>
-                <action android:name="android.intent.action.MAIN" />
-                <category android:name="android.intent.category.LAUNCHER" />
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:scheme="sonara" android:host="open" />
             </intent-filter>
         </activity>
     </application>

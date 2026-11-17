@@ -87,8 +87,8 @@ android {
         applicationId = applicationIdOverride ?: baseApplicationId
         minSdk = 26
         targetSdk = 36
-        versionCode = 2029
-        versionName = "2.6.0"
+        versionCode = 2030
+        versionName = "2.6.5"
         val baseVersionName = requireNotNull(versionName)
         buildConfigField("String", "BASE_VERSION_NAME", "\"$baseVersionName\"")
         buildCommit?.let { versionName = "$baseVersionName+$it" }
@@ -266,6 +266,15 @@ android {
     }
 }
 
+// Sonara TV is kept light (the owner asked for it): no Japanese dictionary in the APK (13 MB; it
+// downloads it when lyrics need it, tv/TvDictionary.kt) and no x86 libraries (no TV uses them).
+androidComponents {
+    onVariants(selector().withFlavor("variant" to "tv")) { variant ->
+        variant.packaging.resources.excludes.add("com/atilika/kuromoji/ipadic/*.bin")
+        variant.packaging.jniLibs.excludes.addAll(listOf("lib/x86/**", "lib/x86_64/**"))
+    }
+}
+
 ksp {
     arg("room.schemaLocation", "$projectDir/schemas")
 }
@@ -357,6 +366,8 @@ dependencies {
     // Signing in on a TV: the TV draws a QR code (core), the phone scans it (embedded scanner).
     implementation(libs.zxing.core)
     implementation(libs.zxing.embedded)
+    // Sonara TV's row on the Android TV home screen.
+    "tvImplementation"(libs.tvprovider)
 
     implementation(libs.profileinstaller)
     "baselineProfile"(project(":baselineprofile"))

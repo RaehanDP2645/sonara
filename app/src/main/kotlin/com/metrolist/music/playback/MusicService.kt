@@ -1252,6 +1252,16 @@ class MusicService :
     }
 
     private fun handleAudioFocusChange(focusChange: Int) {
+        // While casting the phone plays muted for the TV: a notification or a call on the phone
+        // must not pause the TV.
+        if (SonaraCast.state.value.casting &&
+            (focusChange == AudioManager.AUDIOFOCUS_LOSS_TRANSIENT || focusChange == AudioManager.AUDIOFOCUS_LOSS_TRANSIENT_CAN_DUCK)
+        ) {
+            hasAudioFocus = false
+            wasPlayingBeforeAudioFocusLoss = false
+            lastAudioFocusState = focusChange
+            return
+        }
         when (focusChange) {
             AudioManager.AUDIOFOCUS_GAIN,
             AudioManager.AUDIOFOCUS_GAIN_TRANSIENT,
@@ -4496,7 +4506,7 @@ class MusicService :
     }
 
     private fun openPlaylistWidgetTarget(source: Intent) {
-        val activityIntent = Intent(this, MainActivity::class.java).apply {
+        val activityIntent = Intent(this, com.metrolist.music.AppEntry.activity).apply {
             action = MainActivity.ACTION_OPEN_WIDGET_TARGET
             flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP
             putExtra(
@@ -4712,7 +4722,8 @@ class MusicService :
 
         crossfadeMessage = player.createMessage { _, _ ->
             val timer = sleepTimer
-            if (player.isPlaying && player.currentMediaItem?.mediaId == targetMediaId && (timer == null || !timer.pauseWhenSongEnd)) {
+            // No crossfade while casting: the TV can't fade, it would only lose the song's end.
+            if (player.isPlaying && !SonaraCast.state.value.casting && player.currentMediaItem?.mediaId == targetMediaId && (timer == null || !timer.pauseWhenSongEnd)) {
                 startCrossfade()
             }
         }.apply {

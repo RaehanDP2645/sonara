@@ -5,6 +5,8 @@
 
 package com.metrolist.music.ui.component
 
+import com.metrolist.music.utils.PlaylistPrivacy
+import com.metrolist.music.utils.SonaraLinks
 import android.content.Intent
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -64,6 +66,10 @@ fun CollaborateSheet(
     onDismiss: () -> Unit,
     initial: YouTubePlaylistEditor.Collaboration? = null,
     onState: (YouTubePlaylistEditor.Collaboration?) -> Unit = {},
+    /** The playlist's visibility, when the caller knows it (the editor); read here otherwise. */
+    privacy: PlaylistPrivacy? = null,
+    /** Told when turning collaboration on made a private playlist unlisted. */
+    onPrivacyChanged: (PlaylistPrivacy) -> Unit = {},
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -71,6 +77,10 @@ fun CollaborateSheet(
     var loading by remember { mutableStateOf(initial == null) }
     var busy by remember { mutableStateOf<CollaborationChange?>(null) }
     var confirmOff by remember { mutableStateOf(false) }
+    var visibility by remember(privacy) { mutableStateOf(privacy) }
+    LaunchedEffect(playlistId) {
+        if (visibility == null) visibility = YouTubePlaylistEditor.details(playlistId)?.privacy
+    }
 
     // Quietly refreshes the link and the commands; the spinner only shows when nothing is known yet.
     fun reload() {
@@ -87,6 +97,21 @@ fun CollaborateSheet(
         val current = state ?: return
         busy = change
         appScope.launch {
+            // YouTube doesn't let a private playlist take collaborators: it becomes unlisted first.
+            val opening = change == CollaborationChange.ENABLE || change == CollaborationChange.ALLOW_NEW
+            if (opening && (visibility ?: YouTubePlaylistEditor.details(playlistId)?.privacy) == PlaylistPrivacy.PRIVATE) {
+                if (!YouTubePlaylistEditor.setPrivacy(playlistId, PlaylistPrivacy.UNLISTED)) {
+                    scope.launch {
+                        busy = null
+                        ErToast.show(context, R.string.er_playlist_save_failed)
+                    }
+                    return@launch
+                }
+                scope.launch {
+                    visibility = PlaylistPrivacy.UNLISTED
+                    onPrivacyChanged(PlaylistPrivacy.UNLISTED)
+                }
+            }
             val accepted = YouTubePlaylistEditor.changeCollaboration(current, change)
             scope.launch {
                 busy = null
@@ -142,7 +167,10 @@ fun CollaborateSheet(
             } else {
                 SwitchRow(
                     title = stringResource(R.string.er_collaborate),
-                    subtitle = stringResource(R.string.er_collaborate_desc),
+                    subtitle =
+                        stringResource(
+                            if (!current.enabled && visibility == PlaylistPrivacy.PRIVATE) R.string.er_collaborate_unlists else R.string.er_collaborate_desc,
+                        ),
                     checked = current.enabled,
                     enabled = busy == null,
                     working = busy == CollaborationChange.ENABLE || busy == CollaborationChange.DISABLE,
@@ -161,7 +189,7 @@ fun CollaborateSheet(
                 // its height and the button is not pushed below the edge when it becomes usable.
                 val link = current.inviteLink
                 val canInvite = current.enabled && current.allowNew
-                val shareText = link?.let { stringResource(R.string.er_invite_share_text, playlistTitle, it) }
+                val shareText = link?.let { stringResource(R.string.er_invite_share_text, playlistTitle, SonaraLinks.share(it)) }
                 Button(
                     enabled = canInvite && shareText != null && busy == null,
                     onClick = {

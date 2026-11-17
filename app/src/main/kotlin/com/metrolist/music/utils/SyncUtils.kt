@@ -1680,6 +1680,8 @@ class SyncUtils @Inject constructor(
         description: String = "",
         privacy: PlaylistPrivacy = PlaylistPrivacy.PRIVATE,
         sourcePlaylistId: String? = null,
+        /** Songs to put in the new playlist on YouTube (an import from another platform). */
+        videoIds: List<String> = emptyList(),
     ): String? = withContext(Dispatchers.IO) {
         val browseId = if (sourcePlaylistId != null) {
             // An import only works through YouTube Music's own create, which copies the songs.
@@ -1695,13 +1697,15 @@ class SyncUtils @Inject constructor(
         } else {
             null
         }
+        if (browseId != null && videoIds.isNotEmpty()) YouTubePlaylistEditor.addSongs(browseId, videoIds)
+        val filledOnYouTube = sourcePlaylistId != null || videoIds.isNotEmpty()
         val createdPlaylist = playlist.copy(browseId = browseId, isAutoSync = browseId != null)
         database.insert(createdPlaylist)
         // An import is filled by YouTube itself, so it is synced from there at once (below).
-        if (sourcePlaylistId == null) createdHereAt[createdPlaylist.id] = System.currentTimeMillis()
+        if (!filledOnYouTube) createdHereAt[createdPlaylist.id] = System.currentTimeMillis()
         Timber.tag("SonaraWeb").d("playlist created: local=${createdPlaylist.id} browseId=$browseId")
         // An imported playlist already has songs on YouTube; bring them in.
-        if (sourcePlaylistId != null && browseId != null) {
+        if (filledOnYouTube && browseId != null) {
             syncScope.launch { runCatching { syncPlaylistNow(browseId, createdPlaylist.id) } }
         }
         createdPlaylist.id

@@ -90,10 +90,25 @@ object LyricsRomanizer {
 
     // ---- Japanese ----
 
-    private val tokenizer by lazy { Tokenizer() }
+    /**
+     * Makes the Japanese tokenizer: from the dictionary bundled with the app by default. Sonara TV
+     * doesn't bundle it (13 MB) and makes one from a dictionary it downloads (TvDictionary); until
+     * that is there this gives null, and Japanese lines get no romanization.
+     */
+    @Volatile
+    var tokenizerFactory: () -> Tokenizer? = { Tokenizer() }
 
-    private fun japanese(line: String): String {
-        val tokens = synchronized(tokenizer) { tokenizer.tokenize(line) }.filter { it.surface.isNotBlank() }
+    @Volatile
+    private var tokenizer: Tokenizer? = null
+
+    private fun tokenizer(): Tokenizer? =
+        tokenizer ?: synchronized(this) {
+            tokenizer ?: runCatching { tokenizerFactory() }.getOrNull()?.also { tokenizer = it }
+        }
+
+    private fun japanese(line: String): String? {
+        val tk = tokenizer() ?: return null
+        val tokens = synchronized(tk) { tk.tokenize(line) }.filter { it.surface.isNotBlank() }
         val out = StringBuilder()
         tokens.forEachIndexed { index, token ->
             val kana = readingOf(token)
