@@ -106,11 +106,11 @@ fun TvLinkScreen(
     var scanning by remember { mutableStateOf(false) }
     val accountName by rememberPreference(AccountNameKey, "")
 
-    fun find(session: String? = null, code: String? = null) {
+    fun find(session: String? = null, digits: String? = null) {
         state = LinkState.Looking
         scope.launch {
             state =
-                TvLink.lookup(context, session = session, code = code).fold(
+                TvLink.lookup(context, session = session, code = digits).fold(
                     onSuccess = { target -> target?.let { LinkState.Confirm(it) } ?: LinkState.Failed(R.string.er_tv_not_found) },
                     onFailure = { LinkState.Failed(R.string.er_tv_failed) },
                 )
@@ -195,7 +195,7 @@ fun TvLinkScreen(
                         onChange = { typed ->
                             code = typed.filter(Char::isDigit).take(CODE_LENGTH)
                             if (state is LinkState.Failed) state = LinkState.Idle
-                            if (code.length == CODE_LENGTH) find(code = code)
+                            if (code.length == CODE_LENGTH) find(digits = code)
                         },
                     )
                     Box(Modifier.fillMaxWidth().height(Spacing.XXXL), contentAlignment = Alignment.Center) {

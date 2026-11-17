@@ -268,7 +268,7 @@ class MainActivity : FragmentActivity() {
     private var collaborationInvite by mutableStateOf<YouTubePlaylistEditor.CollaborationInvite?>(null)
 
     /** A song opened from a shared link, shown in its menu with Play. */
-    private var sharedSong by mutableStateOf<com.metrolist.innertube.models.SongItem?>(null)
+    private var linkSong by mutableStateOf<com.metrolist.innertube.models.SongItem?>(null)
     private var collapsePlayerForIntent: (() -> Unit)? = null
 
     // Keep PlayerConnection as regular property - NOT mutableStateOf to prevent UI recomposition
@@ -821,9 +821,6 @@ class MainActivity : FragmentActivity() {
                 }
 
                 val coroutineScope = rememberCoroutineScope()
-                var sharedSong: SongItem? by remember {
-                    mutableStateOf(null)
-                }
                 val snackbarHostState = remember { SnackbarHostState() }
 
                 LaunchedEffect(Unit) {
@@ -1197,9 +1194,9 @@ class MainActivity : FragmentActivity() {
                     )
 
                     val linkMenu = LocalMenuState.current
-                    LaunchedEffect(sharedSong) {
-                        val song = sharedSong ?: return@LaunchedEffect
-                        sharedSong = null
+                    LaunchedEffect(linkSong) {
+                        val song = linkSong ?: return@LaunchedEffect
+                        linkSong = null
                         linkMenu.show {
                             com.metrolist.music.ui.menu.YouTubeSongMenu(song = song, onDismiss = linkMenu::dismiss, preview = true)
                         }
@@ -1264,30 +1261,6 @@ class MainActivity : FragmentActivity() {
                         }
                     }
 
-                    sharedSong?.let { song ->
-                        playerConnection?.let {
-                            Dialog(
-                                onDismissRequest = { sharedSong = null },
-                                properties = DialogProperties(usePlatformDefaultWidth = false),
-                            ) {
-                                Surface(
-                                    modifier = Modifier.padding(24.dp),
-                                    shape = RoundedCornerShape(16.dp),
-                                    color = AlertDialogDefaults.containerColor,
-                                    tonalElevation = AlertDialogDefaults.TonalElevation,
-                                ) {
-                                    Column(
-                                        horizontalAlignment = Alignment.CenterHorizontally,
-                                    ) {
-                                        YouTubeSongMenu(
-                                            song = song,
-                                            onDismiss = { sharedSong = null },
-                                        )
-                                    }
-                                }
-                            }
-                        }
-                    }
                 }
             }
             }
@@ -1486,7 +1459,7 @@ class MainActivity : FragmentActivity() {
                             .onSuccess { queue ->
                                 withContext(Dispatchers.Main) {
                                     collapsePlayerForIntent?.invoke()
-                                    sharedSong = queue.firstOrNull { it.id == videoId } ?: queue.firstOrNull()
+                                    linkSong = queue.firstOrNull { it.id == videoId } ?: queue.firstOrNull()
                                 }
                             }.onFailure {
                                 reportException(it)
