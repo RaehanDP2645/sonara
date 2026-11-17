@@ -8,6 +8,7 @@
 
 package com.metrolist.music.tv
 
+import androidx.compose.ui.focus.focusRestorer
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
@@ -121,6 +122,8 @@ fun <T : Any> TvShelf(
         LazyRow(
             contentPadding = PaddingValues(horizontal = Tv.SafeX, vertical = 8.dp),
             horizontalArrangement = Arrangement.spacedBy(Tv.Gap),
+            // Back on this row, the remote lands on the card it left, not the first one.
+            modifier = Modifier.focusRestorer(),
         ) {
             items(items, key = key, contentType = { it::class.simpleName }) { card(it) }
         }
@@ -133,6 +136,7 @@ fun TvCard(
     item: Any,
     onClick: () -> Unit,
     width: Dp = Tv.Card,
+    onLongClick: (() -> Unit)? = null,
 ) {
     val look = tvLook(item)
     val shape = if (look.round) CircleShape else RoundedCornerShape(Tv.CardRadius)
@@ -145,7 +149,7 @@ fun TvCard(
                 Modifier
                     .fillMaxWidth()
                     .aspectRatio(1f)
-                    .tvFocus(shape = shape, onClick = onClick)
+                    .tvFocus(shape = shape, onLongClick = onLongClick, onClick = onClick)
                     .background(MaterialTheme.colorScheme.surfaceContainerHigh),
         )
         Spacer(Modifier.height(10.dp))

@@ -8,6 +8,7 @@
 
 package com.metrolist.music.tv
 
+import com.metrolist.music.models.MediaMetadata
 import androidx.compose.runtime.Stable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
@@ -48,6 +49,12 @@ class TvNavigator {
     var tab by mutableStateOf(TvTab.Home)
     val pages = mutableStateListOf<TvPage>()
     var nowPlaying by mutableStateOf(false)
+
+    /** The song whose menu (like, add to playlist, ...) is open, or null. */
+    var menuSong by mutableStateOf<MediaMetadata?>(null)
+
+    /** Holding OK on [item] opens its menu, when it is a song. */
+    fun menuFor(item: Any): (() -> Unit)? = (item as? SongItem)?.let { song -> { menuSong = song.toMediaMetadata() } }
 
     val page: TvPage? get() = pages.lastOrNull()
 

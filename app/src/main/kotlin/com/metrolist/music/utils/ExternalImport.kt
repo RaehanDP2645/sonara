@@ -22,6 +22,7 @@ import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
+import java.util.concurrent.atomic.AtomicInteger
 import org.json.JSONArray
 import org.json.JSONObject
 import java.text.Normalizer
@@ -148,26 +149,37 @@ object ExternalImport {
     }
 
     /**
-     * Finds each track on YouTube Music (songs only), a few at a time. What is left over is asked
-     * about once more, by ISRC, when [api] is given; only the finished list is ever shown.
+     * Finds each track on YouTube Music (songs only), a few at a time; [progress] counts the songs
+     * gone through, so a long list shows how far it is. What is left over is asked about once
+     * more, by ISRC, when [api] is given, and those count too.
      */
     suspend fun match(
         tracks: List<Track>,
         api: Api? = null,
+        progress: (done: Int, total: Int) -> Unit = { _, _ -> },
     ): Matched =
         coroutineScope {
             val gate = Semaphore(PARALLEL_SEARCHES)
+            val done = AtomicInteger()
             val found =
                 tracks
-                    .map { track -> async { gate.withPermit { runCatching { find(track) }.getOrNull() } } }
-                    .awaitAll()
+                    .map { track ->
+                        async {
+                            gate.withPermit {
+                                runCatching { find(track) }.getOrNull().also { progress(done.incrementAndGet(), tracks.size) }
+                            }
+                        }
+                    }.awaitAll()
                     .toMutableList()
 
             // Songs still not found whose platform gave no ISRC: Deezer may know one, and an ISRC
             // names one recording exactly, so searching again with it finds the right song.
             if (api != null) {
                 val asking = tracks.indices.filter { found[it] == null && tracks[it].isrc == null }.take(ISRC_BATCH * ISRC_BATCHES)
+                val total = tracks.size + asking.size
+                var asked = tracks.size
                 for (batch in asking.chunked(ISRC_BATCH)) {
+                    progress(asked, total)
                     val isrcs = isrcsFor(api, batch.map { tracks[it] })
                     var hits = 0
                     batch.forEachIndexed { position, index ->
@@ -175,6 +187,7 @@ object ExternalImport {
                             hits++
                             found[index] = runCatching { find(tracks[index].copy(isrc = isrc)) }.getOrNull()
                         }
+                        progress(++asked, total)
                     }
                     // Deezer knows nothing about this music either: no point asking about the rest.
                     if (hits == 0) break

@@ -189,6 +189,7 @@ private fun ImportSection(
     link: TextFieldState,
     check: YouTubePlaylistEditor.ImportCheck?,
     checking: Boolean,
+    progress: Pair<Int, Int>?,
     useDetails: Boolean,
     onUseDetails: (Boolean) -> Unit,
     onCheck: () -> Unit,
@@ -206,7 +207,12 @@ private fun ImportSection(
             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri, imeAction = ImeAction.Done),
             onKeyboardAction = { if (link.text.isNotBlank() && !checking) onCheck() },
             isError = error != null,
-            supportingText = error?.let { shown -> { Text(stringResource(importErrorText(shown))) } },
+            supportingText =
+                when {
+                    error != null -> { { Text(stringResource(importErrorText(error))) } }
+                    progress != null -> { { Text(stringResource(R.string.er_import_matching, progress.first, progress.second)) } }
+                    else -> null
+                },
             trailingIcon = {
                 if (checking) {
                     CircularProgressIndicator(strokeWidth = Spacing.XXS, modifier = Modifier.size(Size.IconSmall))
@@ -462,6 +468,8 @@ fun PlaylistEditorSheet(
     val importLink = rememberTextFieldState()
     var importCheck by remember { mutableStateOf<YouTubePlaylistEditor.ImportCheck?>(null) }
     var checkingImport by remember { mutableStateOf(false) }
+    // How far the matching is, while a Spotify, Deezer or Apple Music list is looked up.
+    var importProgress by remember { mutableStateOf<Pair<Int, Int>?>(null) }
     // On: the name and description come from the playlist behind the link, where it has them.
     // Off: they are typed here, as for a new playlist.
     var useSourceDetails by rememberSaveable { mutableStateOf(true) }
@@ -658,21 +666,26 @@ fun PlaylistEditorSheet(
                         link = importLink,
                         check = importCheck,
                         checking = checkingImport,
+                        progress = importProgress,
                         useDetails = useSourceDetails,
                         onUseDetails = { useSourceDetails = it },
                         onCheck = {
                             checkingImport = true
+                            importProgress = null
                             appScope.launch {
                                 val text = importLink.text.toString()
                                 val result =
                                     if (ExternalImport.platformOf(text) != null) {
-                                        YouTubePlaylistEditor.checkExternalImport(SonaraApi.forApp(context), text)
+                                        YouTubePlaylistEditor.checkExternalImport(SonaraApi.forApp(context), text) { done, total ->
+                                            appScope.launch(Dispatchers.Main) { importProgress = done to total }
+                                        }
                                     } else {
                                         YouTubePlaylistEditor.checkImport(text)
                                     }
                                 withContext(Dispatchers.Main) {
                                     importCheck = result
                                     checkingImport = false
+                                    importProgress = null
                                 }
                             }
                         },

@@ -79,6 +79,7 @@ class TvActivity : FragmentActivity() {
             TvRoot(
                 playerConnection = playerConnectionSnapshot,
                 database = database,
+                syncUtils = syncUtils,
                 link = link,
                 onLinkHandled = { link = null },
             )

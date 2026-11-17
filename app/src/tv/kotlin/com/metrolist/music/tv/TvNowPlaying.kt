@@ -9,6 +9,8 @@
 
 package com.metrolist.music.tv
 
+import androidx.compose.foundation.focusGroup
+import androidx.compose.ui.focus.focusProperties
 import androidx.compose.foundation.background
 import androidx.compose.foundation.focusable
 import androidx.compose.foundation.layout.Arrangement
@@ -75,7 +77,10 @@ private const val SEEK_MS = 10_000L
 private enum class Side { UpNext, Lyrics }
 
 @Composable
-fun TvNowPlaying(playerConnection: PlayerConnection) {
+fun TvNowPlaying(
+    playerConnection: PlayerConnection,
+    onMenu: (com.metrolist.music.models.MediaMetadata) -> Unit,
+) {
     val metadata by playerConnection.mediaMetadata.collectAsStateWithLifecycle()
     val song = metadata ?: return
     val playing by playerConnection.isPlaying.collectAsStateWithLifecycle()
@@ -86,7 +91,8 @@ fun TvNowPlaying(playerConnection: PlayerConnection) {
     val playFocus = remember { FocusRequester() }
     LaunchedEffect(Unit) { runCatching { playFocus.requestFocus() } }
 
-    Box(Modifier.fillMaxSize().background(Color.Black)) {
+    // The pages stay behind this screen: the remote must never wander onto them, unseen.
+    Box(Modifier.fillMaxSize().background(Color.Black).focusProperties { onExit = { cancelFocusChange() } }.focusGroup()) {
         ArtworkBackground(artwork = rememberPlayerArtwork(song.thumbnailUrl), pureBlack = true)
         Box(Modifier.fillMaxSize().background(Brush.horizontalGradient(listOf(Color.Black.copy(alpha = 0.55f), Color.Black.copy(alpha = 0.25f), Color.Black.copy(alpha = 0.7f)))))
         Row(Modifier.fillMaxSize().padding(horizontal = Tv.SafeX, vertical = Tv.SafeY + 8.dp)) {
@@ -119,6 +125,7 @@ fun TvNowPlaying(playerConnection: PlayerConnection) {
                     TvButton(if (current?.song?.liked == true) R.drawable.favorite else R.drawable.favorite_border, null, selected = current?.song?.liked == true, onClick = playerConnection::toggleLike)
                     TvButton(R.drawable.radio, null, onClick = playerConnection::startRadioSeamlessly)
                     SleepButton(playerConnection)
+                    TvButton(R.drawable.playlist_add, null, onClick = { onMenu(song) })
                 }
             }
             Spacer(Modifier.width(48.dp))

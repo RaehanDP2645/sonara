@@ -197,12 +197,12 @@ fun TvCollection(
         }
         data.shelves.forEachIndexed { index, (title, items) ->
             item(key = "shelf:$index", contentType = "shelf") {
-                TvShelf(title, items) { item -> TvCard(item, onClick = { nav.act(item, player) }) }
+                TvShelf(title, items) { item -> TvCard(item, onClick = { nav.act(item, player) }, onLongClick = nav.menuFor(item)) }
             }
         }
         if (data.shelves.isEmpty()) {
             itemsIndexed(data.songs, key = { index, song -> "${song.id}:$index" }, contentType = { _, _ -> "song" }) { index, song ->
-                SongRow(index, song) { play(index) }
+                SongRow(index, song, onLongClick = { nav.menuSong = song }) { play(index) }
             }
         }
     }
@@ -212,6 +212,7 @@ fun TvCollection(
 private fun SongRow(
     index: Int,
     song: MediaMetadata,
+    onLongClick: () -> Unit,
     onClick: () -> Unit,
 ) {
     Row(
@@ -220,7 +221,7 @@ private fun SongRow(
             Modifier
                 .padding(horizontal = Tv.SafeX, vertical = 3.dp)
                 .fillMaxWidth()
-                .tvFocus(shape = RoundedCornerShape(12.dp), grow = 1.015f, onClick = onClick)
+                .tvFocus(shape = RoundedCornerShape(12.dp), grow = 1.015f, onLongClick = onLongClick, onClick = onClick)
                 .background(Color.White.copy(alpha = 0.03f))
                 .padding(horizontal = 16.dp, vertical = 9.dp),
     ) {

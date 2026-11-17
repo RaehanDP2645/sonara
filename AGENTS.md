@@ -98,8 +98,19 @@ in `docs/perf.md`; never write numbers that were not measured.
   else title + artists with the length and album to choose; what isn't found is listed and not
   added. Every failure has its own message (`YouTubePlaylistEditor.ImportError`). Spotify's Web
   API refuses apps whose owner has no Premium (403 on everything, confirmed in the admin Test), so
-  playlists and albums are read from Spotify's public embed page instead (`SpotifyEmbed.php`, 100
-  tracks of a playlist, no ISRC); credentials in the admin page are optional and tried first.
+  a Spotify list is read with the web player's own access token, which every embed page carries
+  and no app or sign-in is needed for (`SpotifyWeb.php`, kept encrypted for its hour). A playlist
+  goes through the web player's own GraphQL first (`SpotifyPathfinder.php`:
+  `api-partner.spotify.com/pathfinder/v2/query`, `fetchPlaylist` then `fetchPlaylistContents`, 100
+  per page until the end, with a client token from `clienttoken.spotify.com`; every song, Spotify's
+  own playlists too, no ISRC). Its persisted-query hash is built in; on `PersistedQueryNotFound` the
+  new one is read from the web player's script and kept a week, so a Spotify change mends itself.
+  Then, in order: the Web API with the same token (`SpotifyApi.php`, adds ISRCs; answered 429 from
+  a home IP), the owner's own app (`SpotifySource.php`), and Spotify's public embed page
+  (`SpotifyEmbed.php`, the first 100 tracks). The first that answers wins; a refusal of every token
+  way is remembered for 30 minutes. The owner may save an `sp_dc` cookie in the admin page for a
+  list no anonymous token sees (shared but not public, "Made for you"); anonymous is always tried
+  first. One import answers with at most `ImportList::MAX_TRACKS` (2000) songs.
   Songs still not found and without an ISRC are looked up once more: `/api/isrc` asks Deezer's
   open search (`IsrcSource.php`, no key, answers kept) and the app searches again with the ISRC,
   which names one recording exactly. Only the finished list is shown, never a per-song count.
@@ -153,6 +164,14 @@ are the TV's own, in `app/src/tv/`, laid out like the big TV music apps:
 - Now Playing (`TvNowPlaying`): cover, time bar (left/right seek 10 s), controls, like, radio,
   sleep timer, and Up next or Lyrics. The idle screen (`TvIdle`, after 45 s without the remote
   while playing) is the spinning record with the lyrics beside it, or alone when there are none.
+- Song menu (`TvSongMenu`): holding OK on a song (rows and cards) or the playlist button in Now
+  Playing offers Like, Add to playlist, Play next, Add to queue and Start radio, synced to the
+  account like the phone (`LocalSyncUtils` is provided on the TV). The TV creates, imports and
+  downloads nothing.
+- Focus: Now Playing and the song menu keep the remote inside them (`onExit` cancelled), so it
+  never wanders onto the pages behind; when a front screen closes, or focus is lost, it goes back
+  to the page on the item it left (`focusRestorer`). The search field takes the remote only after
+  OK on it, so the TV keyboard never opens by itself.
 - Lyrics (`TvLyrics`): timed lyrics follow the song; untimed ones just stand still.
 - Settings are all on one page (`TvSettings`), with real switches; no "All settings".
 - Focus is drawn by `tvFocus` (bigger, light outline). Crossfade is on (5 s) by default on the

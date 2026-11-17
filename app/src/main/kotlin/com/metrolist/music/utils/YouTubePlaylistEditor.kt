@@ -151,13 +151,14 @@ object YouTubePlaylistEditor {
     suspend fun checkExternalImport(
         api: ExternalImport.Api,
         link: String,
+        progress: (done: Int, total: Int) -> Unit = { _, _ -> },
     ): ImportCheck {
         val playlist =
             ExternalImport.resolve(api, link).getOrElse { failure ->
                 val problem = (failure as? ExternalImport.ImportProblem)?.problem ?: ExternalImport.Problem.SOURCE_ERROR
                 return ImportCheck(error = errorOf(problem))
             }
-        val matched = ExternalImport.match(playlist.tracks, api)
+        val matched = ExternalImport.match(playlist.tracks, api, progress)
         val source =
             ImportSource(
                 playlistId = "",

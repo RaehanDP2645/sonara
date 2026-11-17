@@ -28,6 +28,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
@@ -391,6 +392,9 @@ fun ImportPlaylistDialog(app: AppState) {
     var source by remember { mutableStateOf<YouTubePlaylistEditor.ImportSource?>(null) }
     var invite by remember { mutableStateOf<YouTubePlaylistEditor.CollaborationInvite?>(null) }
     var showMissing by remember { mutableStateOf(false) }
+    // How far the matching is, while another platform's list is looked up.
+    var progress by remember { mutableStateOf<Pair<Int, Int>?>(null) }
+    var privacy by remember { mutableStateOf(PlaylistPrivacy.PRIVATE) }
     // On: the name and description come from the playlist behind the link, where it has them.
     // Off: they are typed here.
     var useDetails by remember { mutableStateOf(true) }
@@ -402,6 +406,7 @@ fun ImportPlaylistDialog(app: AppState) {
         problem = null
         source = null
         invite = null
+        progress = null
         // A Sonara share or invite link stands for the YouTube Music one.
         val text = link.trim().let { SonaraLinks.toYouTube(it) ?: it }
         scope.launch(Dispatchers.IO) {
@@ -412,10 +417,11 @@ fun ImportPlaylistDialog(app: AppState) {
             } else {
                 val result =
                     if (ExternalImport.platformOf(text) != null) {
-                        YouTubePlaylistEditor.checkExternalImport(SonaraApi, text)
+                        YouTubePlaylistEditor.checkExternalImport(SonaraApi, text) { done, total -> progress = done to total }
                     } else {
                         YouTubePlaylistEditor.checkImport(text)
                     }
+                progress = null
                 source = result.source.takeIf { result.error == null }
                 problem = result.error?.let(::importProblem)
             }
@@ -433,9 +439,9 @@ fun ImportPlaylistDialog(app: AppState) {
             val details = if (useDetails) found.description.orEmpty() else description.trim()
             val id =
                 if (external == null) {
-                    YouTubePlaylistEditor.create(title, details, PlaylistPrivacy.PRIVATE, found.playlistId)
+                    YouTubePlaylistEditor.create(title, details, privacy, found.playlistId)
                 } else {
-                    YouTubePlaylistEditor.create(title, details, PlaylistPrivacy.PRIVATE)?.also {
+                    YouTubePlaylistEditor.create(title, details, privacy)?.also {
                         YouTubePlaylistEditor.addSongs(it, external.matched.videoIds)
                     }
                 }
@@ -479,7 +485,13 @@ fun ImportPlaylistDialog(app: AppState) {
                     source = null
                     invite = null
                     problem = null
-                }, label = { Text("Playlist or invite link") }, singleLine = true, modifier = Modifier.fillMaxWidth().onFocusChanged { app.typing = it.isFocused })
+                }, label = { Text("Playlist or invite link") }, placeholder = { Text("YouTube Music, Spotify, Deezer or Apple Music") }, singleLine = true, modifier = Modifier.fillMaxWidth().onFocusChanged { app.typing = it.isFocused })
+                progress?.let { (done, total) ->
+                    Column(verticalArrangement = Arrangement.spacedBy(Spacing.XS)) {
+                        Text("Finding songs on YouTube Music · $done of $total", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        LinearProgressIndicator(progress = { if (total > 0) done.toFloat() / total else 0f }, modifier = Modifier.fillMaxWidth())
+                    }
+                }
                 Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().clickable { useDetails = !useDetails }.handCursor()) {
                     Column(Modifier.weight(1f)) {
                         Text("Use the playlist's own details", style = MaterialTheme.typography.bodyMedium)
@@ -544,6 +556,24 @@ fun ImportPlaylistDialog(app: AppState) {
                                     )
                                 }
                             }
+                        }
+                    }
+                }
+                if (source != null) {
+                    Row(horizontalArrangement = Arrangement.spacedBy(Spacing.S)) {
+                        PlaylistPrivacy.entries.forEach { option ->
+                            Text(
+                                option.name.lowercase().replaceFirstChar { it.uppercase() },
+                                style = MaterialTheme.typography.labelLarge,
+                                color = if (option == privacy) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurface,
+                                modifier =
+                                    Modifier
+                                        .clip(ErShape.Pill)
+                                        .background(if (option == privacy) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceContainerHighest)
+                                        .clickable { privacy = option }
+                                        .handCursor()
+                                        .padding(horizontal = Spacing.L, vertical = Spacing.S),
+                            )
                         }
                     }
                 }

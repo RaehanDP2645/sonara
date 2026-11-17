@@ -419,7 +419,7 @@ fun Sidebar(app: AppState) {
                         createOpen = false
                         app.newPlaylistFor = emptyList()
                     }
-                    AppMenuItem("Import or join from a link", "link") {
+                    AppMenuItem("Import a playlist from a link", "link") {
                         createOpen = false
                         app.importing = true
                     }

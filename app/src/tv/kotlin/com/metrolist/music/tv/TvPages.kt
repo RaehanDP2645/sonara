@@ -9,6 +9,10 @@
 
 package com.metrolist.music.tv
 
+import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.focus.focusProperties
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.FocusRequester
 import android.app.Activity
 import android.content.Intent
 import android.speech.RecognizerIntent
@@ -143,7 +147,7 @@ private fun Shelf(
     nav: TvNavigator,
 ) {
     val player = LocalPlayerConnection.current
-    TvShelf(title, items) { item -> TvCard(item, onClick = { nav.act(item, player) }) }
+    TvShelf(title, items) { item -> TvCard(item, onClick = { nav.act(item, player) }, onLongClick = nav.menuFor(item)) }
 }
 
 /** The account's filters (hide explicit, hide music videos), as the phone applies them. */
@@ -158,6 +162,10 @@ private fun rememberFilters(): (List<YTItem>) -> List<YTItem> {
 @Composable
 fun TvSearch(nav: TvNavigator) {
     var query by remember { mutableStateOf("") }
+    // The field is typed in only after OK on it: reached by the remote on its own, it opened the
+    // TV's keyboard over the page (a cursor moving past the results landed there).
+    var typing by remember { mutableStateOf(false) }
+    val fieldFocus = remember { FocusRequester() }
     var searched by remember { mutableStateOf("") }
     val filter = rememberFilters()
     val voice =
@@ -191,6 +199,10 @@ fun TvSearch(nav: TvNavigator) {
                 Box(
                     Modifier
                         .weight(1f)
+                        .tvFocus(shape = CircleShape, grow = 1.02f) {
+                            typing = true
+                            runCatching { fieldFocus.requestFocus() }
+                        }
                         .border(2.dp, MaterialTheme.colorScheme.onSurface.copy(alpha = 0.22f), CircleShape)
                         .background(MaterialTheme.colorScheme.onSurface.copy(alpha = 0.06f), CircleShape)
                         .padding(horizontal = 26.dp, vertical = 15.dp),
@@ -203,8 +215,16 @@ fun TvSearch(nav: TvNavigator) {
                         textStyle = MaterialTheme.typography.titleMedium.copy(color = MaterialTheme.colorScheme.onSurface),
                         cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
                         keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
-                        keyboardActions = KeyboardActions(onSearch = { searched = query.trim() }),
-                        modifier = Modifier.fillMaxWidth(),
+                        keyboardActions = KeyboardActions(onSearch = {
+                            searched = query.trim()
+                            typing = false
+                        }),
+                        modifier =
+                            Modifier
+                                .fillMaxWidth()
+                                .focusRequester(fieldFocus)
+                                .focusProperties { canFocus = typing }
+                                .onFocusChanged { if (!it.isFocused && typing) typing = false },
                     )
                 }
                 Spacer(Modifier.width(14.dp))

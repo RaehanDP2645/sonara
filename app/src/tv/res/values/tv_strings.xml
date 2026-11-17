@@ -20,4 +20,6 @@
     <string name="tv_sign_in_steps">On your phone, open Sonara, go to Settings, Sign in on a TV, and scan this code or type it in.</string>
     <string name="tv_sign_in_google">Sign in with Google here</string>
     <string name="tv_sign_in_retry">Can\'t reach Sonara. Trying again…</string>
+    <string name="tv_no_playlists">No playlists yet. Make one on your phone, then it shows here.</string>
+    <string name="tv_added_to_playlist">Added to %1$s</string>
 </resources>

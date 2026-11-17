@@ -10,6 +10,12 @@
 
 package com.metrolist.music.tv
 
+import androidx.compose.foundation.focusGroup
+import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.focus.focusRestorer
+import androidx.compose.ui.focus.FocusRequester
+import com.metrolist.music.LocalSyncUtils
+import com.metrolist.music.utils.SyncUtils
 import android.app.UiModeManager
 import android.content.Context
 import android.content.Intent
@@ -94,6 +100,7 @@ fun Context.isTelevision(): Boolean =
 fun TvRoot(
     playerConnection: PlayerConnection?,
     database: MusicDatabase,
+    syncUtils: SyncUtils,
     link: String?,
     onLinkHandled: () -> Unit,
 ) {
@@ -112,7 +119,7 @@ fun TvRoot(
             val cookie by rememberPreference(InnerTubeCookieKey, "")
             val signedIn = remember(cookie) { "SAPISID" in parseCookieString(cookie) }
             var started by remember { mutableStateOf(false) }
-            CompositionLocalProvider(LocalDatabase provides database, LocalPlayerConnection provides playerConnection) {
+            CompositionLocalProvider(LocalDatabase provides database, LocalPlayerConnection provides playerConnection, LocalSyncUtils provides syncUtils) {
                 AnimatedContent(
                     targetState =
                         when {
@@ -219,9 +226,21 @@ private fun TvShell(
         onLinkHandled()
     }
     BackHandler(enabled = nav.nowPlaying || nav.pages.isNotEmpty() || nav.tab != TvTab.Home) { nav.back() }
+    BackHandler(enabled = nav.menuSong != null) { nav.menuSong = null }
+
+    // The page the remote returns to, on the card it had, whenever a screen in front closes; and
+    // whenever the remote ends up on nothing at all (it vanished from the screen before).
+    val contentFocus = remember { FocusRequester() }
+    var hasFocus by remember { mutableStateOf(true) }
+    val front = nav.nowPlaying || idle || nav.menuSong != null
+    LaunchedEffect(front, hasFocus, nav.page, nav.tab) {
+        if (front && hasFocus) return@LaunchedEffect
+        delay(FOCUS_SETTLE_MS)
+        if (!front || !hasFocus) runCatching { contentFocus.requestFocus() }
+    }
 
     Box(
-        Modifier.fillMaxSize().onPreviewKeyEvent {
+        Modifier.fillMaxSize().onFocusChanged { hasFocus = it.hasFocus }.onPreviewKeyEvent {
             lastKey = System.currentTimeMillis()
             if (idle) {
                 // The key that wakes the screen does nothing else.
@@ -234,7 +253,7 @@ private fun TvShell(
     ) {
         Column(Modifier.fillMaxSize()) {
             TopBar(nav, playerConnection)
-            Box(Modifier.weight(1f).fillMaxWidth()) {
+            Box(Modifier.weight(1f).fillMaxWidth().focusRequester(contentFocus).focusRestorer().focusGroup()) {
                 when (val page = nav.page) {
                     null ->
                         when (nav.tab) {
@@ -248,8 +267,9 @@ private fun TvShell(
                 }
             }
         }
-        if (nav.nowPlaying && metadata != null && playerConnection != null) TvNowPlaying(playerConnection)
+        if (nav.nowPlaying && metadata != null && playerConnection != null) TvNowPlaying(playerConnection, onMenu = { nav.menuSong = it })
         if (idle && metadata != null && playerConnection != null) TvIdle(playerConnection)
+        nav.menuSong?.let { song -> TvSongMenu(song, onDismiss = { nav.menuSong = null }) }
         val prompt by AppUpdater.prompt.collectAsStateWithLifecycle()
         prompt?.let { release -> UpdateDialog(release) { AppUpdater.dismissPrompt() } }
     }
@@ -328,3 +348,6 @@ private fun TopBar(
         }
     }
 }
+
+/** A moment for a closing screen to go before the remote is put back on the page. */
+private const val FOCUS_SETTLE_MS = 120L

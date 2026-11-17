@@ -272,4 +272,5 @@
     <string name="er_song_unavailable">This song isn\'t available</string>
     <string name="er_import_use_details">Use the playlist\'s own details</string>
     <string name="er_import_use_details_desc">Take the name and description from the link</string>
+    <string name="er_import_matching">Finding songs on YouTube Music · %1$d of %2$d</string>
 </resources>
