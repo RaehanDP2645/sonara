@@ -184,6 +184,10 @@ fun main(args: Array<String>) {
     val saved = AccountStore.load()
     AccountStore.use(saved)
     val player = Player(appScope)
+    // Back where it was when Sonara was last closed (the queue and the song, paused).
+    player.restore()
+    player.keepSaved()
+    appScope.launch { DesktopUpdater.checkAtStart() }
     LyricsRepository.follow(player, appScope)
     appScope.launch(Dispatchers.IO) { Housekeeping.run() }
     MediaKeys.listen(
@@ -365,8 +369,8 @@ fun main(args: Array<String>) {
                             } else {
                                 LaunchedEffect(account) { app.loadAccount() }
                                 App(app)
-                                // Built-in updater: a newer release, looked up once a day, or found from Settings.
-                                LaunchedEffect(Unit) { DesktopUpdater.checkAtStart() }
+                                // Built-in updater: a newer release (looked up in appScope, so it goes on in the
+                                // tray too), or found from Settings.
                                 DesktopUpdater.prompt?.let { UpdateDialog(it) }
                             }
                         }

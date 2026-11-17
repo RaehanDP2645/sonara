@@ -57,8 +57,6 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextAlign
 import androidx.core.net.toUri
-import androidx.lifecycle.Lifecycle
-import androidx.lifecycle.compose.LifecycleEventEffect
 import androidx.media3.exoplayer.offline.DownloadService
 import androidx.navigation.NavController
 import coil3.compose.AsyncImage
@@ -101,8 +99,6 @@ import com.metrolist.music.ui.theme.Spacing
 import com.metrolist.music.ui.theme.WindowLayout
 import com.metrolist.music.ui.theme.backdropTopBarColors
 import com.metrolist.music.ui.theme.topBarBackdrop
-import com.metrolist.music.utils.openLinkSettings
-import com.metrolist.music.utils.opensYouTubeMusicLinks
 import com.metrolist.music.utils.rememberEnumPreference
 import com.metrolist.music.utils.rememberPreference
 import kotlin.math.roundToInt
@@ -358,25 +354,6 @@ fun SettingsScreen(navController: NavController) {
                     trailingContent = { ValueText(Formatter.formatShortFileSize(context, downloadBytes)) },
                     enabled = downloadBytes > 0,
                     onClick = { confirmRemoveDownloads = true },
-                ),
-            ),
-        )
-
-        // Android gives music.youtube.com links to YouTube Music (it owns the domain); only the
-        // phone's settings can hand them to SONARA. The switch shows where links open now and
-        // goes straight to that settings page; it is read again on return.
-        var linksHere by remember { mutableStateOf(opensYouTubeMusicLinks(context)) }
-        LifecycleEventEffect(Lifecycle.Event.ON_RESUME) { linksHere = opensYouTubeMusicLinks(context) }
-        val openLinks = {
-            if (!openLinkSettings(context)) ErToast.show(context, R.string.er_open_links_failed)
-        }
-        Material3SettingsGroup(
-            items = listOf(
-                Material3SettingsItem(
-                    icon = painterResource(R.drawable.link),
-                    title = { Text(stringResource(R.string.er_open_links)) },
-                    trailingContent = { Switch(checked = linksHere, onCheckedChange = { openLinks() }) },
-                    onClick = openLinks,
                 ),
             ),
         )

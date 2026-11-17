@@ -431,7 +431,6 @@ fun SelectionSongMenu(
             )
         }
 
-        item { Spacer(modifier = Modifier.height(12.dp)) }
 
         item {
             Material3MenuGroup(
@@ -807,7 +806,6 @@ fun SelectionMediaMetadataMenu(
             )
         }
 
-        item { Spacer(modifier = Modifier.height(12.dp)) }
 
         item {
             Material3MenuGroup(

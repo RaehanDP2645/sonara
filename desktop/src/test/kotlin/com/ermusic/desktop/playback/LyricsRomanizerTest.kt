@@ -64,4 +64,16 @@ class LyricsRomanizerTest {
         val out = romanize("I love you", "Aku cinta kamu", "ooh")
         assertFalse(out.isNotEmpty())
     }
+
+    @Test
+    fun aByteOrderMarkDoesNotChangeTheFirstWord() {
+        val line = "\uFEFF君の名前を呼んだ"
+        assertEquals("kimi no namae o yonda", romanize(line)[line.trim()])
+    }
+
+    @Test
+    fun songReadingsAndQuotes() {
+        assertEquals("futari dake no sora", romanize("二人だけの空")["二人だけの空"])
+        assertEquals("\"sayonara\" dakedatta", romanize("「さよなら」だけだった")["「さよなら」だけだった"])
+    }
 }

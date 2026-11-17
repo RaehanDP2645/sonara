@@ -24,6 +24,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.systemBars
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -111,15 +112,12 @@ fun ShowMediaInfo(videoId: String) {
         }
     }
 
+    // On the sheet's own colour (the song's, over the player): no black panel of its own, and
+    // only the bottom inset, since the sheet already sits under the status bar.
     LazyColumn(
         state = rememberLazyListState(),
-        modifier = Modifier
-            .padding(
-                windowInsets
-                    .asPaddingValues()
-            )
-            .fillMaxSize()
-            .background(MaterialTheme.colorScheme.background)
+        contentPadding = PaddingValues(bottom = windowInsets.asPaddingValues().calculateBottomPadding() + 16.dp),
+        modifier = Modifier.fillMaxSize(),
     ) {
         if (info != null) {
             item(contentType = "MediaDetails") {

@@ -54,6 +54,8 @@ object ReleaseCheck {
 
     /** Once a day at most, unless asked for in About. */
     const val CHECK_EVERY_MS = 24L * 60 * 60 * 1000
+    /** How often an app left open looks again. */
+    const val RECHECK_EVERY_MS = 6 * 60 * 60 * 1000L
 
     private val json = Json { ignoreUnknownKeys = true }
 

@@ -263,7 +263,7 @@ private fun ImportSection(
                         Text(details, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                     if (external?.truncated == true) {
-                        Text(stringResource(R.string.er_import_first_500, external.total), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text(stringResource(R.string.er_import_first_500, external.matched.videoIds.size + external.matched.missing.size), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                 }
             }

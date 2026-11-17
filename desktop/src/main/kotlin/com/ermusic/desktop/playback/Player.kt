@@ -23,6 +23,9 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.json.Json
+import com.ermusic.desktop.AppFiles
+import java.io.File
 import org.bytedeco.ffmpeg.global.avutil
 import org.bytedeco.javacv.FFmpegFrameGrabber
 import org.bytedeco.javacv.FrameGrabber
@@ -270,6 +273,61 @@ class Player(private val scope: CoroutineScope) {
 
     fun cycleRepeat() =
         mutableState.update { it.copy(repeat = Repeat.entries[(it.repeat.ordinal + 1) % Repeat.entries.size]) }
+
+    /**
+     * Puts back what played when Sonara was last closed: the queue, the song and its place, paused,
+     * as the phone keeps its queue. Play carries on from there.
+     */
+    fun restore() {
+        val saved = runCatching { sessionJson.decodeFromString<SavedSession>(sessionFile.readText()) }.getOrNull() ?: return
+        if (saved.queue.isEmpty() || saved.index !in saved.queue.indices) return
+        unshuffled = saved.unshuffled
+        mutableState.update {
+            it.copy(
+                queue = saved.queue,
+                index = saved.index,
+                shuffle = saved.shuffle,
+                repeat = runCatching { Repeat.valueOf(saved.repeat) }.getOrDefault(Repeat.Off),
+                durationMs = saved.queue[saved.index].durationMs,
+                playing = false,
+            )
+        }
+        mutablePosition.value = saved.positionMs.coerceAtLeast(0)
+    }
+
+    /** Saves the queue and place every few seconds while they change, and once more on the way out. */
+    fun keepSaved() {
+        scope.launch(Dispatchers.IO) {
+            var last: SavedSession? = null
+            while (true) {
+                val now = snapshot()
+                if (now != last) {
+                    save(now)
+                    last = now
+                }
+                delay(SAVE_EVERY_MS)
+            }
+        }
+        Runtime.getRuntime().addShutdownHook(Thread { save(snapshot()) })
+    }
+
+    private fun snapshot(): SavedSession {
+        val state = mutableState.value
+        // The place moves all the time; whole seconds are enough to come back to.
+        return SavedSession(state.queue, state.index, mutablePosition.value / 1000 * 1000, state.shuffle, state.repeat.name, unshuffled)
+    }
+
+    private fun save(session: SavedSession) {
+        runCatching {
+            if (session.queue.isEmpty()) {
+                sessionFile.delete()
+            } else {
+                val temp = File(sessionFile.parentFile, sessionFile.name + ".tmp")
+                temp.writeText(sessionJson.encodeToString(session))
+                java.nio.file.Files.move(temp.toPath(), sessionFile.toPath(), java.nio.file.StandardCopyOption.REPLACE_EXISTING, java.nio.file.StandardCopyOption.ATOMIC_MOVE)
+            }
+        }
+    }
 
     fun toggleShuffle() {
         mutableState.update { state ->
@@ -633,3 +691,18 @@ class Player(private val scope: CoroutineScope) {
 }
 
 private const val MS_PER_SECOND = 1000L
+
+/** What [Player.keepSaved] writes and [Player.restore] reads. */
+@Serializable
+private data class SavedSession(
+    val queue: List<Track>,
+    val index: Int,
+    val positionMs: Long,
+    val shuffle: Boolean,
+    val repeat: String,
+    val unshuffled: List<Track>? = null,
+)
+
+private val sessionFile: File get() = File(AppFiles.root, "player.json")
+private val sessionJson = Json { ignoreUnknownKeys = true }
+private const val SAVE_EVERY_MS = 5_000L

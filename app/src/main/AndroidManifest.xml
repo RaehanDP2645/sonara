@@ -76,23 +76,6 @@
                 <category android:name="android.intent.category.DEFAULT" />
             </intent-filter>
 
-            <!-- YouTube Music links -->
-            <intent-filter android:autoVerify="true">
-                <action android:name="android.intent.action.VIEW" />
-
-                <category android:name="android.intent.category.DEFAULT" />
-                <category android:name="android.intent.category.BROWSABLE" />
-
-                <data android:scheme="http" />
-                <data android:scheme="https" />
-                <data android:host="music.youtube.com" />
-                <data android:pathPrefix="/watch" />
-                <data android:pathPrefix="/playlist" />
-                <data android:pathPrefix="/browse/" />
-                <data android:pathPrefix="/channel/" />
-                <data android:pathPrefix="/search" />
-            </intent-filter>
-
             <!-- Sonara's own links (SonaraLinks): shared songs, playlists, albums, artists and
                  collaboration invites (/open/), and Sonara TV's sign-in page (/tv/). Verified
                  against the site's .well-known/assetlinks.json, so they open here directly. -->

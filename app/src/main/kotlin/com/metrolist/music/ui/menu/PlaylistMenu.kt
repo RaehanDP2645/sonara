@@ -386,7 +386,21 @@ fun PlaylistMenu(
                                 )
                             },
                         )
-                        },
+                        } ?: NewAction(
+                            icon = {
+                                Icon(
+                                    painter = painterResource(R.drawable.queue_music),
+                                    contentDescription = null,
+                                    modifier = Modifier.size(28.dp),
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            },
+                            text = stringResource(R.string.add_to_queue),
+                            onClick = {
+                                onDismiss()
+                                playerConnection.addToQueue(songs.map { it.toMediaItem() })
+                            },
+                        ),
                     ),
                 modifier = Modifier.padding(horizontal = 4.dp, vertical = 16.dp),
                 columns = 3,
@@ -440,7 +454,8 @@ fun PlaylistMenu(
                                 },
                             ),
                         )
-                        add(
+                        // A playlist only in Sonara can't be shared: Add to queue is its third card.
+                        if (playlist.playlist.browseId != null) add(
                             Material3MenuItemData(
                                 title = { Text(text = stringResource(R.string.add_to_queue)) },
                                 description = { Text(text = stringResource(R.string.add_to_queue_desc)) },
@@ -459,8 +474,6 @@ fun PlaylistMenu(
                     },
             )
         }
-
-        item { Spacer(modifier = Modifier.height(12.dp)) }
 
         item {
             Material3MenuGroup(

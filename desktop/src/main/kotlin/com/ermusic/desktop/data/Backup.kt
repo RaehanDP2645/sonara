@@ -26,7 +26,7 @@ object Backup {
     const val MARKER = "sonara-backup.txt"
 
     /** What a backup holds, relative to the data folder. */
-    val included = listOf("settings.properties", "history.json", "searches.json", "speed_dial.json", "downloads.json", "downloads", "lyrics", "translations")
+    val included = listOf("settings.properties", "player.json", "history.json", "searches.json", "speed_dial.json", "downloads.json", "downloads", "lyrics", "translations")
 
     private const val PENDING = "restore-pending"
 

@@ -266,6 +266,9 @@ class MainActivity : FragmentActivity() {
     private lateinit var navController: NavHostController
     private var pendingIntent: Intent? = null
     private var collaborationInvite by mutableStateOf<YouTubePlaylistEditor.CollaborationInvite?>(null)
+
+    /** A song opened from a shared link, shown in its menu with Play. */
+    private var sharedSong by mutableStateOf<com.metrolist.innertube.models.SongItem?>(null)
     private var collapsePlayerForIntent: (() -> Unit)? = null
 
     // Keep PlayerConnection as regular property - NOT mutableStateOf to prevent UI recomposition
@@ -1193,6 +1196,15 @@ class MainActivity : FragmentActivity() {
                         modifier = Modifier.align(Alignment.BottomCenter),
                     )
 
+                    val linkMenu = LocalMenuState.current
+                    LaunchedEffect(sharedSong) {
+                        val song = sharedSong ?: return@LaunchedEffect
+                        sharedSong = null
+                        linkMenu.show {
+                            com.metrolist.music.ui.menu.YouTubeSongMenu(song = song, onDismiss = linkMenu::dismiss, preview = true)
+                        }
+                    }
+
                     SheetHost(LocalSheetHost.current)
 
                     BottomSheetPage(
@@ -1373,23 +1385,29 @@ class MainActivity : FragmentActivity() {
         intent: Intent,
         navController: NavHostController,
     ) {
-        val opened = intent.data ?: intent.extras?.getString(Intent.EXTRA_TEXT)?.toUri() ?: return
-        // A Sonara share link stands for a YouTube Music one: opened as that link (SonaraLinks).
-        val uri = com.metrolist.music.utils.SonaraLinks.toYouTube(opened.toString())?.toUri() ?: opened
+        // A link opened here, or shared to Sonara as text ("Listen to ... https://...").
+        val opened =
+            intent.data?.toString()
+                ?: intent.extras?.getString(Intent.EXTRA_TEXT)?.let { Regex("""(https://|sonara://)\S+""").find(it)?.value }
+                ?: return
         intent.data = null
         intent.removeExtra(Intent.EXTRA_TEXT)
         val coroutineScope = lifecycle.coroutineScope
+
+        // Sonara TV's QR page ("Open in Sonara") or its link: sign that TV in.
+        com.metrolist.music.tvlink.TvLink.sessionFrom(opened)?.let { session ->
+            collapsePlayerForIntent?.invoke()
+            navController.navigate("tv_link?session=$session") { launchSingleTop = true }
+            return
+        }
+        // Only Sonara's own links open the app (music.youtube.com links are YouTube Music's); each
+        // stands for a YouTube Music page and opens as that page (SonaraLinks).
+        val uri = com.metrolist.music.utils.SonaraLinks.toYouTube(opened)?.toUri() ?: return
         // An opened link takes over whatever is on screen (full player, Settings, ...): the player
-        // folds down and the link's page opens on top; a song link opens the player instead.
+        // folds down and the link's page opens on top; a song link shows the song, with Play.
         val focus = { route: String ->
             collapsePlayerForIntent?.invoke()
             navController.navigate(route) { launchSingleTop = true }
-        }
-
-        // Sonara TV's QR page ("Open in Sonara") or its link: sign that TV in.
-        com.metrolist.music.tvlink.TvLink.sessionFrom(uri.toString())?.let { session ->
-            focus("tv_link?session=$session")
-            return
         }
 
         when (val path = uri.pathSegments.firstOrNull()) {
@@ -1461,21 +1479,18 @@ class MainActivity : FragmentActivity() {
                 val playlistId = uri.getQueryParameter("list")
 
                 if (videoId != null) {
+                    // Shown, not played: whoever opens a shared song decides to play it.
                     coroutineScope.launch(Dispatchers.IO) {
                         YouTube
                             .queue(listOf(videoId), playlistId)
                             .onSuccess { queue ->
                                 withContext(Dispatchers.Main) {
-                                    playerConnection?.playQueue(
-                                        YouTubeQueue(
-                                            WatchEndpoint(videoId = queue.firstOrNull()?.id, playlistId = playlistId),
-                                            queue.firstOrNull()?.toMediaMetadata(),
-                                        ),
-                                    )
-                                    playerConnection?.openPlayer()
+                                    collapsePlayerForIntent?.invoke()
+                                    sharedSong = queue.firstOrNull { it.id == videoId } ?: queue.firstOrNull()
                                 }
                             }.onFailure {
                                 reportException(it)
+                                withContext(Dispatchers.Main) { ErToast.show(this@MainActivity, R.string.er_song_unavailable) }
                             }
                     }
                 } else if (playlistId != null) {

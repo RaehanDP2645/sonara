@@ -87,7 +87,8 @@ fun ArtistMenu(
         item {
             NewActionGrid(
                 actions = buildList {
-                    if (artist.songCount > 0) {
+                    // Play and Shuffle stay as cards (greyed out with no songs), so there are always three.
+                    run {
                         add(
                             NewAction(
                                 icon = {
@@ -99,6 +100,7 @@ fun ArtistMenu(
                                     )
                                 },
                                 text = stringResource(R.string.play),
+                                enabled = artist.songCount > 0,
                                 onClick = {
                                     coroutineScope.launch {
                                         val songs = withContext(Dispatchers.IO) {
@@ -130,6 +132,7 @@ fun ArtistMenu(
                                     )
                                 },
                                 text = stringResource(R.string.shuffle),
+                                enabled = artist.songCount > 0,
                                 onClick = {
                                     coroutineScope.launch {
                                         val songs = withContext(Dispatchers.IO) {

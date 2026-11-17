@@ -64,7 +64,8 @@ in `docs/perf.md`; never write numbers that were not measured.
   show without a translation. Stored in `lyrics.translatedLyrics`.
 - Lyrics romanization (`lyrics/LyricsRomanizer.kt`, shared with the desktop; Settings > Lyrics,
   on by default): lines in another script also in Latin letters, made on the device with no AI:
-  Kuromoji for Japanese, Revised Romanization for Korean, ICU (Android's built-in, ICU4J on the
+  Kuromoji for Japanese (byte-order marks and zero-width characters dropped first: they changed the
+  first word's reading; a few sung readings such as 二人 futari fixed in `WORDS`), Revised Romanization for Korean, ICU (Android's built-in, ICU4J on the
   desktop) for Chinese pinyin and every other script. No romanization when none can be made.
   Under it, Show: "Original and Latin" (default) or "Latin only", which puts the Latin letters in
   the line's place in the lyrics, the player's lyric preview (`LyricsPeek`) and the Cast subtitles.
@@ -87,7 +88,9 @@ in `docs/perf.md`; never write numbers that were not measured.
   and loads nothing: with the app installed Android opens it (verified App Links,
   `.well-known/assetlinks.json`, and `sonara://open/?…`) as the YouTube Music link it stands for
   (`SonaraLinks.toYouTube` in `handleDeepLinkIntent`); otherwise `/open/` offers Sonara or YouTube
-  Music. Opening music.youtube.com links in the app still works.
+  Music. Only Sonara's links open the app: music.youtube.com links are YouTube Music's (no link
+  filter, no "default app" setting). A shared song opens as its menu, large with Play
+  (`YouTubeSongMenu(preview = true)`), not played at once.
 - Playlist import (Library > + > Import playlist, and the desktop's Import): YouTube Music links as
   before (YouTube copies the playlist); Spotify, Deezer and Apple Music playlists and albums are
   read by the proxy (`/api/import`, Spotify's key in the admin page) and matched on YouTube Music
@@ -97,6 +100,12 @@ in `docs/perf.md`; never write numbers that were not measured.
 - Collaboration needs a playlist that isn't private: turning it on makes a private playlist
   unlisted first (`CollaborateSheet`); choosing Private in the editor shows a red line and turns
   collaboration off before saving.
+- Menus: always exactly three action cards (`NewActionGrid`), never two or four; with no third
+  action of its own, a menu takes one from its list (Play/Shuffle for auto playlists, Add to queue
+  for a playlist only in Sonara). No spacers between a menu's groups.
+- The mini player can't be swiped away (that stopped the music); it stays until the queue ends.
+- Updates are looked up at launch and every 6 hours while the app runs (desktop: in the tray
+  too); "Install unknown apps" allowed in Android's settings carries on with the install.
 - Tablets: held upright, a tablet is the phone app exactly (bottom bar, phone player); the
   tablet layouts (`WindowLayout.wide`: rail, side-panel player, two panes) are landscape only.
 - Update dialogs show only a release's "What's new" and "Fixes" sections
@@ -162,7 +171,8 @@ the running app itself, and on a real uninstall asks keep / back up then delete 
 second process the installer wouldn't wait for); `SONARA_DATA=keep|delete` answers silent uninstalls.
 Under the installer HKCU is not the user's: name the user's hive as `HKU\[UserSID]`. A Mac and Linux
 have no uninstaller, so Settings has Uninstall Sonara; every platform has Back up and Restore
-(`data/Backup.kt`, never the sign-in).
+(`data/Backup.kt`, never the sign-in). The queue, song and place are kept in `player.json` and come
+back, paused, at the next start (`Player.restore`/`keepSaved`).
 
 The same app runs on macOS, with nothing left out; `Os.kt` says where it runs, and each Windows piece
 has a Mac counterpart: the app drawn under a see-through title bar with the traffic lights kept

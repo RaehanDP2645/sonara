@@ -51,6 +51,7 @@ fun UpdateDialog(
     val required = AppUpdater.isRequired(release)
     val notes = remember(release.notes) { ReleaseCheck.highlights(release.notes) }
     LaunchedEffect(Unit) { AppUpdater.resetFailed() }
+    androidx.lifecycle.compose.LifecycleEventEffect(androidx.lifecycle.Lifecycle.Event.ON_RESUME) { AppUpdater.resumeInstall(context) }
 
     DefaultDialog(
         onDismiss = { if (!required) onDismiss() },

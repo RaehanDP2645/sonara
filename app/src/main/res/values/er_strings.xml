@@ -170,7 +170,7 @@
     <string name="er_import_err_nothing_found">None of these songs could be found on YouTube Music</string>
     <string name="er_import_matching">Finding songs on YouTube Music · %1$d of %2$d</string>
     <string name="er_import_found">%1$d of %2$d songs found</string>
-    <string name="er_import_first_500">The first 500 of %1$d songs</string>
+    <string name="er_import_first_500">Only the first %1$d songs could be read</string>
     <plurals name="er_import_missing">
         <item quantity="one">%d song not found, it won\'t be added</item>
         <item quantity="other">%d songs not found, they won\'t be added</item>
@@ -187,8 +187,6 @@
     <string name="er_queued_episodes">Your queued episodes</string>
     <string name="er_playlist_deleted">Playlist deleted</string>
     <string name="er_playlist_delete_failed">YouTube did not delete this playlist</string>
-    <string name="er_open_links">Set Sonara as default music app</string>
-    <string name="er_open_links_failed">Could not open the link settings</string>
     <string name="er_new">New</string>
     <string name="er_new_playlist_desc">Collect songs, videos and podcasts</string>
     <string name="er_import_playlist">Import playlist</string>
@@ -239,8 +237,12 @@
     <string name="er_tv_sign_in">Sign in on a TV</string>
     <string name="er_tv_camera">Allow the camera in Sonara\'s app settings to scan the code</string>
     <string name="er_tv_aim">Point at the code on your TV</string>
-    <string name="er_tv_steps">Open Sonara TV, then scan the code on the screen or type its 6 digits.</string>
-    <string name="er_tv_scan">Scan the code</string>
+    <string name="er_tv_steps">Open Sonara TV. Type the 6 digits on its sign-in screen, or scan its QR code.</string>
+    <string name="er_tv_code_title">Enter the code on your TV</string>
+    <string name="er_tv_or">or</string>
+    <string name="er_tv_as">As %1$s</string>
+    <string name="er_tv_done_line">Your TV is ready to play.</string>
+    <string name="er_tv_scan">Scan QR code</string>
     <string name="er_tv_code">6-digit code</string>
     <string name="er_tv_working">One moment…</string>
     <string name="er_tv_confirm">Sign in on %1$s?</string>
@@ -268,4 +270,5 @@
     <string name="er_type_song">Song</string>
     <string name="er_shared_from">Shared from Sonara</string>
     <string name="er_share_listen">Listen on</string>
+    <string name="er_song_unavailable">This song isn\'t available</string>
 </resources>

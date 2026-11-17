@@ -373,7 +373,6 @@ fun QueueMenu(
             )
         }
 
-        item { Spacer(modifier = Modifier.height(12.dp)) }
 
         // Download section
         item {
@@ -444,7 +443,6 @@ fun QueueMenu(
             )
         }
 
-        item { Spacer(modifier = Modifier.height(12.dp)) }
 
         // Navigation section (Artist, Album)
         item {
@@ -510,7 +508,6 @@ fun QueueMenu(
             )
         }
 
-        item { Spacer(modifier = Modifier.height(12.dp)) }
 
         // Details and refetch section
         item {

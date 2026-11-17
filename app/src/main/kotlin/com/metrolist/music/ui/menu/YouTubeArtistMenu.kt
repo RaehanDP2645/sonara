@@ -108,6 +108,27 @@ fun YouTubeArtistMenu(
                             )
                         )
                     }
+                    // Always three cards: Shuffle, or else the artist's page, when there is no radio.
+                    if (artist.radioEndpoint == null) {
+                        val shuffle = artist.shuffleEndpoint
+                        add(
+                            NewAction(
+                                icon = {
+                                    Icon(
+                                        painter = painterResource(if (shuffle != null) R.drawable.shuffle else R.drawable.artist),
+                                        contentDescription = null,
+                                        modifier = Modifier.size(28.dp),
+                                        tint = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                },
+                                text = stringResource(if (shuffle != null) R.string.shuffle else R.string.view_artist),
+                                onClick = {
+                                    if (shuffle != null) playerConnection.playQueue(YouTubeQueue(shuffle)) else navController.navigate("artist/${artist.id}")
+                                    onDismiss()
+                                }
+                            )
+                        )
+                    }
 
                     add(
                         NewAction(

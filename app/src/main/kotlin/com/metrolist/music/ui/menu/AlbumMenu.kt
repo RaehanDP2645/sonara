@@ -450,7 +450,6 @@ fun AlbumMenu(
             )
         }
 
-        item { Spacer(modifier = Modifier.height(12.dp)) }
 
         item {
             Material3MenuGroup(
@@ -525,7 +524,6 @@ fun AlbumMenu(
             )
         }
 
-        item { Spacer(modifier = Modifier.height(12.dp)) }
 
         item {
             // Export album as a playlist (CSV/M3U)
@@ -610,7 +608,6 @@ fun AlbumMenu(
             }
         }
 
-        item { Spacer(modifier = Modifier.height(12.dp)) }
 
         item {
             Material3MenuGroup(

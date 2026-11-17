@@ -33,7 +33,11 @@ object LyricsRomanizer {
             val japanese = distinct.any { line -> line.codePoints().anyMatch { isKana(it) } }
             buildMap {
                 for (line in distinct) {
-                    val romanized = runCatching { romanizeLine(line, japanese) }.getOrNull() ?: continue
+                    // Many lyric files start with a byte-order mark (or carry zero-width spaces): the
+                    // tokenizer read the word after one wrongly (君 as "kun"), so the first line's
+                    // first word came out wrong. They are dropped before reading; the key stays the line.
+                    val clean = line.filterNot { Character.getType(it) == Character.FORMAT.toInt() }.trim()
+                    val romanized = runCatching { romanizeLine(clean, japanese) }.getOrNull() ?: continue
                     if (worthShowing(line, romanized)) put(line, romanized)
                 }
             }
@@ -110,16 +114,34 @@ object LyricsRomanizer {
         val tk = tokenizer() ?: return null
         val tokens = synchronized(tk) { tk.tokenize(line) }.filter { it.surface.isNotBlank() }
         val out = StringBuilder()
+        var skip = false
         tokens.forEachIndexed { index, token ->
-            val kana = readingOf(token)
-            val nextKana = tokens.getOrNull(index + 1)?.let(::readingOf)
-            val romaji = particle(token) ?: kanaToRomaji(kana, nextKana)
+            if (skip) {
+                skip = false
+                return@forEachIndexed
+            }
+            // Words the dictionary splits or reads as numbers (二人 as "ni nin"): their sung reading.
+            val word = WORDS[token.surface + tokens.getOrNull(index + 1)?.surface.orEmpty()]?.also { skip = true } ?: WORDS[token.surface]
+            val kana = word ?: readingOf(token)
+            val nextKana = tokens.getOrNull(index + (if (skip) 2 else 1))?.let(::readingOf)
+            val romaji = (if (word == null) particle(token) else null) ?: kanaToRomaji(kana, nextKana)
             if (romaji.isEmpty()) return@forEachIndexed
             if (out.isNotEmpty() && joinsWithSpace(token, tokens.getOrNull(index - 1))) out.append(' ')
             out.append(romaji)
         }
         return out.toString().lowercase()
     }
+
+    private val OPENERS = setOf('「', '『', '（', '(', '【', '〈', '《', '"', '“')
+
+    /** Readings the dictionary gets wrong in songs, as katakana. */
+    private val WORDS =
+        mapOf(
+            "一人" to "ヒトリ",
+            "二人" to "フタリ",
+            "大人" to "オトナ",
+            "一人ぼっち" to "ヒトリボッチ",
+        )
 
     /** Katakana for the token: its dictionary reading, or the token itself (kana, Latin, unknown words). */
     private fun readingOf(token: Token): String {
@@ -144,6 +166,8 @@ object LyricsRomanizer {
         previous: Token?,
     ): Boolean {
         if (previous == null) return true
+        // No space after an opening quote or bracket: 「さよなら」 is "sayonara", not " sayonara".
+        if (previous.surface.lastOrNull() in OPENERS) return false
         if (token.partOfSpeechLevel1 == "記号") return token.surface.any { it.isLetterOrDigit() }
         if (previous.partOfSpeechLevel1 == "接頭詞") return false
         if (token.partOfSpeechLevel1 == "助動詞") return false

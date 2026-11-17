@@ -608,7 +608,6 @@ fun SongMenu(
             )
         }
 
-        item { Spacer(modifier = Modifier.height(12.dp)) }
 
         item {
             Material3MenuGroup(
@@ -800,7 +799,6 @@ fun SongMenu(
             )
         }
 
-        item { Spacer(modifier = Modifier.height(12.dp)) }
 
         item {
             Material3MenuGroup(
@@ -871,7 +869,6 @@ fun SongMenu(
             )
         }
 
-        item { Spacer(modifier = Modifier.height(12.dp)) }
 
         item {
             Material3MenuGroup(

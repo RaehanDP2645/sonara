@@ -494,7 +494,7 @@ fun ImportPlaylistDialog(app: AppState) {
                                     },
                                 ).joinToString(" · ")
                             if (details.isNotEmpty()) Text(details, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                            if (external?.truncated == true) Text("The first 500 of ${external.total} songs", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            if (external?.truncated == true) Text("Only the first ${external.matched.videoIds.size + external.matched.missing.size} songs could be read", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
                     }
                     // The tracks no song was found for, folded under a count; they are not added.

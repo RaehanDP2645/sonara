@@ -422,7 +422,6 @@ fun YouTubeAlbumMenu(
             )
         }
 
-        item { Spacer(modifier = Modifier.height(12.dp)) }
 
         item {
             Material3MenuGroup(
@@ -498,7 +497,6 @@ fun YouTubeAlbumMenu(
         }
 
         albumItem.artists?.let { artists ->
-            item { Spacer(modifier = Modifier.height(12.dp)) }
             item {
                 Material3MenuGroup(
                     items =

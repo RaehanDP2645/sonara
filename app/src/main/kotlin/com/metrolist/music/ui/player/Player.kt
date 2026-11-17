@@ -179,10 +179,9 @@ fun BottomSheetPlayer(
         state = state,
         modifier = modifier,
         background = { ArtworkBackground(artwork = artwork, pureBlack = pureBlack) },
-        onDismiss = {
-            playerConnection.player.stop()
-            playerConnection.player.clearMediaItems()
-        },
+        // No swipe-to-dismiss: pulling the mini player down only settled it back, and stopped the
+        // music on the way (owner's report). It stays until the queue ends or is cleared.
+        onDismiss = null,
         collapsedContent = { MiniPlayer(progress = progress) },
     ) {
         val metadata = mediaMetadata ?: return@BottomSheet

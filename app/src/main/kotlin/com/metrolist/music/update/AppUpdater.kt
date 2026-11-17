@@ -27,6 +27,7 @@ import com.metrolist.music.constants.UpdateLastCheckKey
 import com.metrolist.music.constants.UpdateNotifyKey
 import com.metrolist.music.constants.UpdateSkippedVersionKey
 import com.metrolist.music.utils.dataStore
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -67,16 +68,29 @@ object AppUpdater {
         promptState.value = null
     }
 
-    private var checkedAtStart = false
+    private var watching = false
 
     /**
-     * At start (once per launch): looks the newest release up. A required one (below the
-     * release's sonara-min) is shown every time and can't be put off; an optional one is offered
-     * at most once a day, unless switched off or skipped. Offline, nothing is shown.
+     * From launch on, while Sonara is open: looks the newest release up now and every few hours
+     * (an app left open for days still hears of updates). A required one (below the release's
+     * sonara-min) is shown every time and can't be put off; an optional one is offered at most
+     * once a day, unless switched off or skipped. Offline, nothing is shown.
      */
     suspend fun checkAtStart(context: Context) {
-        if (checkedAtStart) return
-        checkedAtStart = true
+        if (watching) return
+        watching = true
+        try {
+            while (true) {
+                offerIfDue(context)
+                delay(ReleaseCheck.RECHECK_EVERY_MS)
+            }
+        } finally {
+            watching = false
+        }
+    }
+
+    private suspend fun offerIfDue(context: Context) {
+        if (promptState.value != null) return
         val release = check(context).getOrNull() ?: return
         if (isRequired(release)) {
             showPrompt(release)
@@ -159,6 +173,16 @@ object AppUpdater {
             }
     }
 
+    private var waitingForPermission = false
+
+    /** Back in Sonara after allowing it to install apps: carries on with the downloaded update. */
+    fun resumeInstall(context: Context) {
+        if (!waitingForPermission) return
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && !context.packageManager.canRequestPackageInstalls()) return
+        waitingForPermission = false
+        (downloadState.value as? Download.Ready)?.file?.takeIf { it.isFile }?.let { install(context, it) }
+    }
+
     fun resetFailed() {
         if (downloadState.value is Download.Failed) downloadState.value = Download.Idle
     }
@@ -172,6 +196,8 @@ object AppUpdater {
         file: File,
     ) {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && !context.packageManager.canRequestPackageInstalls()) {
+            // Back from that setting with it allowed, the installer opens by itself (resumeInstall).
+            waitingForPermission = true
             val allow =
                 Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES, "package:${context.packageName}".toUri())
                     .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)

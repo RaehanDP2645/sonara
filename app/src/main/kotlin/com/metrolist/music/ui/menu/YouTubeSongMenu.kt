@@ -59,6 +59,12 @@ import androidx.compose.ui.unit.sp
 import androidx.media3.exoplayer.offline.Download
 import androidx.media3.exoplayer.offline.DownloadService
 import coil3.compose.AsyncImage
+import com.metrolist.innertube.models.WatchEndpoint
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.Column
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.material3.Button
 import com.metrolist.innertube.YouTube
 import com.metrolist.music.LocalNavController
 import com.metrolist.innertube.models.SongItem
@@ -102,7 +108,9 @@ import com.metrolist.music.ui.utils.podcastRoute
 fun YouTubeSongMenu(
     song: SongItem,
     onDismiss: () -> Unit,
-    onHistoryRemoved: () -> Unit = {}
+    onHistoryRemoved: () -> Unit = {},
+    // A song opened from a shared link: shown large with Play, instead of played at once.
+    preview: Boolean = false,
 ) {
     val navController = LocalNavController.current
     val context = LocalContext.current
@@ -189,95 +197,106 @@ fun YouTubeSongMenu(
         }  
     }  
 
-    ListItem(  
+    if (preview) {
+        SongPreviewHeader(
+            song = song,
+            onPlay = {
+                playerConnection.playQueue(YouTubeQueue(WatchEndpoint(videoId = song.id), song.toMediaMetadata()))
+                playerConnection.openPlayer()
+                onDismiss()
+            },
+        )
+    } else {
+        ListItem(  
 
-        colors = ListItemDefaults.colors(containerColor = Color.Transparent),
-        content = {
-            Text(
-                text = song.title,
-                modifier = Modifier.basicMarquee(),
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-        },  
-        supportingContent = {  
-            Text(  
-                text = joinByBullet(
-                    song.artists.joinToString {
-                        ArtistNameAliases.resolve(artistNameAliases, it.id, it.name)
-                    },
-                    song.duration?.let { makeTimeString(it * 1000L) },
+            colors = ListItemDefaults.colors(containerColor = Color.Transparent),
+            content = {
+                Text(
+                    text = song.title,
+                    modifier = Modifier.basicMarquee(),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
                 )
-            )  
-        },  
-        leadingContent = {
-            Box(
-                contentAlignment = Alignment.Center,
-                modifier = Modifier
-                    .size(ListThumbnailSize)
-                    .clip(RoundedCornerShape(ThumbnailCornerRadius))
-            ) {
-                AsyncImage(
-                    model = song.thumbnail.resize(200, 200),
-                    contentDescription = null,
+            },  
+            supportingContent = {  
+                Text(  
+                    text = joinByBullet(
+                        song.artists.joinToString {
+                            ArtistNameAliases.resolve(artistNameAliases, it.id, it.name)
+                        },
+                        song.duration?.let { makeTimeString(it * 1000L) },
+                    )
+                )  
+            },  
+            leadingContent = {
+                Box(
+                    contentAlignment = Alignment.Center,
                     modifier = Modifier
-                        .fillMaxWidth()
+                        .size(ListThumbnailSize)
                         .clip(RoundedCornerShape(ThumbnailCornerRadius))
-                )
-            }
-        },
-        trailingContent = {
-            // For episodes, show saved state and toggle save for later
-            val isEpisode = song.isEpisode
-            val isFavorite = if (isEpisode) librarySong?.song?.inLibrary != null else librarySong?.song?.liked == true
-            IconButton(
-                onClick = {
-                    if (isEpisode) {
-                        // Episode: toggle save for later
-                        val currentLibrarySong = librarySong
-                        val isCurrentlySaved = currentLibrarySong?.song?.inLibrary != null
-                        val shouldBeSaved = !isCurrentlySaved
+                ) {
+                    AsyncImage(
+                        model = song.thumbnail.resize(200, 200),
+                        contentDescription = null,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(ThumbnailCornerRadius))
+                    )
+                }
+            },
+            trailingContent = {
+                // For episodes, show saved state and toggle save for later
+                val isEpisode = song.isEpisode
+                val isFavorite = if (isEpisode) librarySong?.song?.inLibrary != null else librarySong?.song?.liked == true
+                IconButton(
+                    onClick = {
+                        if (isEpisode) {
+                            // Episode: toggle save for later
+                            val currentLibrarySong = librarySong
+                            val isCurrentlySaved = currentLibrarySong?.song?.inLibrary != null
+                            val shouldBeSaved = !isCurrentlySaved
 
-                        // Update local database first (optimistic update)
-                        database.query {
-                            if (currentLibrarySong != null) {
-                                update(currentLibrarySong.song.copy(inLibrary = if (shouldBeSaved) LocalDateTime.now() else null))
-                            } else {
-                                insert(song.toMediaMetadata().toSongEntity().copy(inLibrary = LocalDateTime.now(), isEpisode = true))
-                            }
-                        }
-
-                        // Sync with YouTube (handles login check internally)
-                        coroutineScope.launch(Dispatchers.IO) {
-                            val setVideoId = if (isCurrentlySaved) song.setVideoId ?: database.getSetVideoId(song.id)?.setVideoId else null
-                            syncUtils.saveEpisode(song.id, shouldBeSaved, setVideoId)
-                        }
-                    } else {
-                        // Regular song: toggle like
-                        database.transaction {
-                            librarySong.let { librarySong ->
-                                val s: SongEntity
-                                if (librarySong == null) {
-                                    insert(song.toMediaMetadata(), SongEntity::toggleLike)
-                                    s = song.toMediaMetadata().toSongEntity().let(SongEntity::toggleLike)
+                            // Update local database first (optimistic update)
+                            database.query {
+                                if (currentLibrarySong != null) {
+                                    update(currentLibrarySong.song.copy(inLibrary = if (shouldBeSaved) LocalDateTime.now() else null))
                                 } else {
-                                    s = librarySong.song.toggleLike()
-                                    update(s)
+                                    insert(song.toMediaMetadata().toSongEntity().copy(inLibrary = LocalDateTime.now(), isEpisode = true))
                                 }
-                                syncUtils.likeSong(s)
+                            }
+
+                            // Sync with YouTube (handles login check internally)
+                            coroutineScope.launch(Dispatchers.IO) {
+                                val setVideoId = if (isCurrentlySaved) song.setVideoId ?: database.getSetVideoId(song.id)?.setVideoId else null
+                                syncUtils.saveEpisode(song.id, shouldBeSaved, setVideoId)
+                            }
+                        } else {
+                            // Regular song: toggle like
+                            database.transaction {
+                                librarySong.let { librarySong ->
+                                    val s: SongEntity
+                                    if (librarySong == null) {
+                                        insert(song.toMediaMetadata(), SongEntity::toggleLike)
+                                        s = song.toMediaMetadata().toSongEntity().let(SongEntity::toggleLike)
+                                    } else {
+                                        s = librarySong.song.toggleLike()
+                                        update(s)
+                                    }
+                                    syncUtils.likeSong(s)
+                                }
                             }
                         }
-                    }
-                },
-            ) {
-                Icon(
-                    painter = painterResource(if (isFavorite) R.drawable.favorite else R.drawable.favorite_border),
-                    tint = if (isFavorite) MaterialTheme.colorScheme.error else LocalContentColor.current,
-                    contentDescription = null,
-                )
-            }
-        },  
-    )  
+                    },
+                ) {
+                    Icon(
+                        painter = painterResource(if (isFavorite) R.drawable.favorite else R.drawable.favorite_border),
+                        tint = if (isFavorite) MaterialTheme.colorScheme.error else LocalContentColor.current,
+                        contentDescription = null,
+                    )
+                }
+            },  
+        )
+    }
 
     HorizontalDivider()
 
@@ -393,7 +412,6 @@ fun YouTubeSongMenu(
             )
         }
 
-        item { Spacer(modifier = Modifier.height(12.dp)) }
 
         item {
             Material3MenuGroup(
@@ -508,7 +526,6 @@ fun YouTubeSongMenu(
             )
         }
 
-        item { Spacer(modifier = Modifier.height(12.dp)) }
 
         item {
             Material3MenuGroup(
@@ -576,7 +593,6 @@ fun YouTubeSongMenu(
             )
         }
 
-        item { Spacer(modifier = Modifier.height(12.dp)) }
 
         item {
             // Check if this is a podcast episode (album ID doesn't start with MPREb_)
@@ -655,6 +671,49 @@ fun YouTubeSongMenu(
                     )
                 }
             )
+        }
+    }
+}
+
+/** A shared song, large: the cover, the title and artists, and Play. */
+@Composable
+private fun SongPreviewHeader(
+    song: SongItem,
+    onPlay: () -> Unit,
+) {
+    Column(
+        horizontalAlignment = Alignment.CenterHorizontally,
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 24.dp).padding(top = 8.dp, bottom = 20.dp),
+    ) {
+        AsyncImage(
+            model = song.thumbnail.resize(544, 544),
+            contentDescription = null,
+            contentScale = ContentScale.Crop,
+            modifier = Modifier.size(220.dp).clip(RoundedCornerShape(20.dp)),
+        )
+        Spacer(Modifier.height(20.dp))
+        Text(
+            song.title,
+            style = MaterialTheme.typography.headlineSmall,
+            fontWeight = FontWeight.Bold,
+            textAlign = TextAlign.Center,
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis,
+        )
+        Spacer(Modifier.height(4.dp))
+        Text(
+            joinByBullet(song.artists.joinToString { it.name }, song.album?.name, song.duration?.let { makeTimeString(it * 1000L) }),
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            textAlign = TextAlign.Center,
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis,
+        )
+        Spacer(Modifier.height(20.dp))
+        Button(onClick = onPlay, modifier = Modifier.fillMaxWidth().height(52.dp), shape = RoundedCornerShape(26.dp)) {
+            Icon(painterResource(R.drawable.play), contentDescription = null, modifier = Modifier.size(22.dp))
+            Spacer(Modifier.width(8.dp))
+            Text(stringResource(R.string.play), style = MaterialTheme.typography.titleMedium)
         }
     }
 }

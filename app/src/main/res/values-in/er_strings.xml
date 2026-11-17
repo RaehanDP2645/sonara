@@ -171,8 +171,6 @@
     <string name="er_queued_episodes">Episode yang Anda antrekan</string>
     <string name="er_playlist_deleted">Playlist dihapus</string>
     <string name="er_playlist_delete_failed">YouTube tidak menghapus playlist ini</string>
-    <string name="er_open_links">Jadikan Sonara aplikasi musik default</string>
-    <string name="er_open_links_failed">Pengaturan link tidak bisa dibuka</string>
     <string name="er_new">Baru</string>
     <string name="er_new_playlist_desc">Kumpulkan lagu, video, dan podcast</string>
     <string name="er_import_playlist">Impor playlist</string>

@@ -14,6 +14,7 @@
 
 package com.ermusic.desktop.update
 
+import kotlinx.coroutines.delay
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
@@ -72,11 +73,28 @@ object DesktopUpdater {
     /** Whether [release] must be installed before Sonara can be used (below its sonara-min). */
     fun isRequired(release: Release): Boolean = release.isRequiredFor(currentVersion)
 
+    private var watching = false
+
     /**
-     * At start: looks the newest release up. A required one is shown every time and can't be put
-     * off; an optional one at most once a day, unless switched off or skipped. Offline, nothing.
+     * From launch on, while Sonara runs (in the tray too): looks the newest release up now and
+     * every few hours. A required one is shown every time and can't be put off; an optional one
+     * at most once a day, unless switched off or skipped. Offline, nothing.
      */
     suspend fun checkAtStart() {
+        if (watching) return
+        watching = true
+        try {
+            while (true) {
+                offerIfDue()
+                delay(ReleaseCheck.RECHECK_EVERY_MS)
+            }
+        } finally {
+            watching = false
+        }
+    }
+
+    private suspend fun offerIfDue() {
+        if (prompt != null) return
         val release = check().getOrNull() ?: return
         if (isRequired(release)) {
             prompt = release

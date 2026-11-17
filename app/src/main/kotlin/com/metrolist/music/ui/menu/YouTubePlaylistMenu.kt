@@ -80,6 +80,7 @@ import com.metrolist.music.extensions.toMediaItem
 import com.metrolist.music.models.MediaMetadata
 import com.metrolist.music.models.toMediaMetadata
 import com.metrolist.music.playback.ExoDownloadService
+import com.metrolist.music.playback.queues.ListQueue
 import com.metrolist.music.playback.queues.YouTubeQueue
 import com.metrolist.music.ui.component.DefaultDialog
 import com.metrolist.music.ui.component.ListDialog
@@ -442,6 +443,52 @@ fun YouTubePlaylistMenu(
                                 ),
                             )
                         }
+                        // Liked Music and other auto playlists come without play or shuffle endpoints:
+                        // their songs are read and played here, so the menu always has three cards.
+                        val playSongs = { shuffled: Boolean ->
+                            coroutineScope.launch {
+                                val all =
+                                    songs.ifEmpty {
+                                        withContext(Dispatchers.IO) {
+                                            YouTube.playlist(playlist.id).completed().getOrNull()?.songs.orEmpty()
+                                        }
+                                    }
+                                if (all.isNotEmpty()) {
+                                    playerConnection.playQueue(
+                                        ListQueue(
+                                            title = playlist.title,
+                                            items = (if (shuffled) all.shuffled() else all).map { it.copy(thumbnail = it.thumbnail.resize(544, 544)).toMediaItem() },
+                                        ),
+                                    )
+                                }
+                            }
+                        }
+                        if (playlist.playEndpoint == null) {
+                            add(
+                                0,
+                                NewAction(
+                                    icon = { Icon(painterResource(R.drawable.play), null, Modifier.size(28.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant) },
+                                    text = stringResource(R.string.play),
+                                    onClick = {
+                                        playSongs(false)
+                                        onDismiss()
+                                    },
+                                ),
+                            )
+                        }
+                        if (playlist.shuffleEndpoint == null) {
+                            add(
+                                1,
+                                NewAction(
+                                    icon = { Icon(painterResource(R.drawable.shuffle), null, Modifier.size(28.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant) },
+                                    text = stringResource(R.string.shuffle),
+                                    onClick = {
+                                        playSongs(true)
+                                        onDismiss()
+                                    },
+                                ),
+                            )
+                        }
                         // A followed playlist is shared like an own one (its music.youtube.com link).
                         add(
                             NewAction(
@@ -580,7 +627,6 @@ fun YouTubePlaylistMenu(
             )
         }
 
-        item { Spacer(modifier = Modifier.height(12.dp)) }
 
         item {
             Material3MenuGroup(
