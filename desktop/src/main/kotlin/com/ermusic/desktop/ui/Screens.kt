@@ -66,6 +66,7 @@ import com.ermusic.desktop.data.Settings
 import com.ermusic.desktop.data.SpeedDial
 import com.ermusic.desktop.playback.Credit
 import com.ermusic.desktop.playback.Track
+import com.ermusic.desktop.playback.toTrack
 import com.metrolist.innertube.YouTube
 import com.metrolist.innertube.models.AlbumItem
 import com.metrolist.innertube.models.PlaylistItem
@@ -1017,7 +1018,8 @@ fun HistoryScreen(app: AppState) {
                             song,
                             app,
                             Modifier.padding(end = Spacing.L),
-                            onClick = { app.player.play(songs.tracks(), index) },
+                            // The song, then songs like it: not the list of what was heard before.
+                            onClick = { app.player.playRadio(song.toTrack()) },
                             menuExtra = song.historyRemoveToken?.let { token ->
                                 { close ->
                                     AppMenuItem("Remove from history", "delete") {

@@ -7,6 +7,7 @@
 
 package com.metrolist.music.playback
 
+import com.metrolist.music.constants.AutoRadioQueueKey
 import com.metrolist.music.constants.ROMANIZE_SHOW_LATIN
 import com.metrolist.music.constants.LyricsRomanizeShowKey
 import com.metrolist.music.constants.LyricsRomanizeKey
@@ -64,6 +65,7 @@ import androidx.media3.common.Player.EVENT_TIMELINE_CHANGED
 import androidx.media3.common.Player.REPEAT_MODE_ALL
 import androidx.media3.common.Player.REPEAT_MODE_OFF
 import androidx.media3.common.Player.REPEAT_MODE_ONE
+import androidx.media3.common.Player.STATE_ENDED
 import androidx.media3.common.Player.STATE_IDLE
 import androidx.media3.common.Timeline
 import androidx.media3.common.audio.SonicAudioProcessor
@@ -466,6 +468,10 @@ class MusicService :
     private var cachedShufflePlaylistFirst = false
     @Volatile
     private var cachedAutoLoadMore = true
+
+    /** Settings > Autoplay: when the queue ends, the music goes on with songs like it. */
+    private var cachedAutoRadio = true
+    private var radioTopUp: Job? = null
     @Volatile
     private var cachedSmartShuffle = false
     @Volatile
@@ -1038,6 +1044,9 @@ class MusicService :
         }
         scope.launch {
             dataStore.data.map { it[AutoLoadMoreKey] ?: true }.distinctUntilChanged().collect { cachedAutoLoadMore = it }
+        }
+        scope.launch {
+            dataStore.data.map { it[AutoRadioQueueKey] ?: true }.distinctUntilChanged().collect { cachedAutoRadio = it }
         }
         scope.launch {
             dataStore.data.map { it[SmartShuffleKey] ?: false }.distinctUntilChanged().collect { enabled ->
@@ -2749,8 +2758,54 @@ class MusicService :
             }
         }
 
+        // Autoplay: the last song of a queue with nothing more to load has started, so songs like
+        // it are added now; the music goes on without a gap, and Next works on the last song.
+        if (!offlineMode && cachedAutoRadio &&
+            player.repeatMode == REPEAT_MODE_OFF &&
+            !player.hasNextMediaItem() &&
+            !currentQueue.hasNextPage() &&
+            radioTopUp?.isActive != true
+        ) {
+            radioTopUp = scope.launch(SilentHandler) { appendRadio() }
+        }
+
         if (cachedPersistentQueue) {
             saveQueueToDisk()
+        }
+    }
+
+    /**
+     * Adds a radio of the song playing to the end of the queue, without songs already in it. In a
+     * long queue that radio may bring nothing new, so the songs before it are tried too.
+     */
+    private suspend fun appendRadio() {
+        val known = (0 until player.mediaItemCount).mapTo(HashSet()) { player.getMediaItemAt(it).mediaId }
+        val index = player.currentMediaItemIndex.takeIf { it >= 0 } ?: return
+        val seeds =
+            (index downTo (index - RADIO_SEEDS + 1).coerceAtLeast(0))
+                .mapNotNull { player.getMediaItemAt(it).metadata }
+                .distinctBy { it.id }
+        for (seed in seeds) {
+            val items =
+                withContext(Dispatchers.IO) {
+                    runCatching { YouTubeQueue.radio(seed).getInitialStatus().items }.getOrDefault(emptyList())
+                        .filterExplicit(cachedHideExplicit)
+                        .filterVideoSongs(cachedHideVideoSongs)
+                }.filter { known.add(it.mediaId) }
+            if (items.isEmpty()) continue
+            if (player.playbackState == STATE_IDLE) return
+            val ended = player.playbackState == STATE_ENDED
+            player.addMediaItems(items)
+            if (player.shuffleModeEnabled) {
+                applyShuffleOrder(player.currentMediaItemIndex, player.mediaItemCount, cachedShufflePlaylistFirst)
+            }
+            // The last song finished before the radio came: start the first of it.
+            if (ended && player.playWhenReady) {
+                player.seekToNextMediaItem()
+                player.prepare()
+                player.play()
+            }
+            return
         }
     }
 
@@ -4920,6 +4975,9 @@ class MusicService :
     }
 
     companion object {
+        /** Songs, back from the current one, a radio may be started from when the queue ends. */
+        private const val RADIO_SEEDS = 4
+
         const val ROOT = "root"
         const val SONG = "song"
         const val ARTIST = "artist"

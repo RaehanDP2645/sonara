@@ -360,13 +360,8 @@ fun HistoryScreen(
                                             } else if (event.song.id == mediaMetadata?.id) {
                                                 playerConnection.openPlayer()
                                             } else {
-                                                playerConnection.playQueue(
-                                                    ListQueue(
-                                                        title = dateTitle,
-                                                        items = dateEvents.map { it.song.toMediaItem() },
-                                                        startIndex = index,
-                                                    ),
-                                                )
+                                                // The song, then songs like it: not the list of what was heard before.
+                                                playerConnection.playQueue(YouTubeQueue.radio(event.song.toMediaMetadata()))
                                             }
                                         },
                                         onLongClick = {

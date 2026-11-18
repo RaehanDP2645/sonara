@@ -23,6 +23,8 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.serialization.Serializable
+import kotlinx.coroutines.async
+import kotlinx.coroutines.Deferred
 import kotlinx.serialization.json.Json
 import com.ermusic.desktop.AppFiles
 import java.io.File
@@ -162,14 +164,39 @@ class Player(private val scope: CoroutineScope) {
         radioJob = scope.launch(Dispatchers.IO) { appendRadio(endpoint, null) }
     }
 
-    private suspend fun appendRadio(endpoint: WatchEndpoint, continuation: String?) {
-        val result = YouTube.next(endpoint, continuation).getOrNull() ?: return
+    /** Adds the radio's songs that aren't in the queue yet; answers how many were added. */
+    private suspend fun appendRadio(endpoint: WatchEndpoint, continuation: String?): Int {
+        val result = YouTube.next(endpoint, continuation).getOrNull() ?: return 0
         radioContinuation = result.continuation?.let { result.endpoint to it }
+        var added = 0
         mutableState.update { state ->
             val known = state.queue.mapTo(HashSet()) { it.id }
-            state.copy(queue = state.queue + result.items.map { it.toTrack() }.filter { known.add(it.id) })
+            val fresh = result.items.map { it.toTrack() }.filter { known.add(it.id) }
+            added = fresh.size
+            state.copy(queue = state.queue + fresh)
         }
+        return added
     }
+
+    /**
+     * Autoplay: more songs like the ones playing, at the end of the queue. The radio already
+     * running goes on first; then one from the current song, then from a few songs before it,
+     * because in a long queue a radio can bring only songs it already has. True when any came.
+     */
+    private suspend fun extendWithRadio(): Boolean {
+        extending?.takeIf { it.isActive }?.let { return it.await() }
+        val job =
+            scope.async(Dispatchers.IO) {
+                radioContinuation?.let { (endpoint, continuation) -> if (appendRadio(endpoint, continuation) > 0) return@async true }
+                val state = mutableState.value
+                val seeds = (state.index downTo (state.index - RADIO_SEEDS + 1).coerceAtLeast(0)).mapNotNull { state.queue.getOrNull(it)?.id }.distinct()
+                seeds.any { id -> appendRadio(WatchEndpoint(videoId = id), null) > 0 }
+            }
+        extending = job
+        return job.await()
+    }
+
+    @Volatile private var extending: Deferred<Boolean>? = null
 
     /** Right after the current song; a song already in the queue moves there instead of being in it twice. */
     fun playNext(tracks: List<Track>) {
@@ -227,6 +254,8 @@ class Player(private val scope: CoroutineScope) {
         when {
             state.index + 1 in state.queue.indices -> load(state.index + 1)
             state.repeat != Repeat.Off && state.queue.isNotEmpty() -> load(0)
+            // Next on the last song: with Autoplay on, on to a song like it.
+            Settings.autoplay.value && state.current != null -> continueWithRadio(stopIfNone = false)
         }
     }
 
@@ -493,6 +522,10 @@ class Player(private val scope: CoroutineScope) {
             if (state.queue.size - state.index <= RADIO_TOP_UP_AT) {
                 radioContinuation?.let { (endpoint, continuation) -> appendRadio(endpoint, continuation) }
             }
+            // The last song has started: with Autoplay on, the songs after it are found now, so the
+            // music goes on without a gap and Next works on the last song.
+            val now = mutableState.value
+            if (now.next == null && now.current != null && now.repeat == Repeat.Off && Settings.autoplay.value) extendWithRadio()
             mutableState.value.next?.let { runCatching { SongCache.get(it.id) } }
         }
     }
@@ -504,7 +537,7 @@ class Player(private val scope: CoroutineScope) {
             state.sleepAfterSong -> mutableState.update { it.copy(playing = false, sleepAfterSong = false) }
             state.repeat == Repeat.One -> load(state.index)
             state.next != null -> load(if (state.index + 1 in state.queue.indices) state.index + 1 else 0)
-            Settings.autoplay.value && state.current != null -> continueWithRadio(state.current!!)
+            Settings.autoplay.value && state.current != null -> continueWithRadio(stopIfNone = true)
             else -> stopAtEnd()
         }
     }
@@ -514,12 +547,15 @@ class Player(private val scope: CoroutineScope) {
         mutableState.update { it.copy(playing = false) }
     }
 
-    /** The queue ran out: carry on with songs like the last one. */
-    private fun continueWithRadio(last: Track) {
+    /** The queue ran out: carry on with songs like the ones playing (usually already added). */
+    private fun continueWithRadio(stopIfNone: Boolean) {
         scope.launch(Dispatchers.IO) {
-            appendRadio(WatchEndpoint(videoId = last.id), null)
             val state = mutableState.value
-            if (state.index + 1 in state.queue.indices) load(state.index + 1) else stopAtEnd()
+            if (state.index + 1 in state.queue.indices || extendWithRadio()) {
+                load(mutableState.value.index + 1)
+            } else if (stopIfNone) {
+                stopAtEnd()
+            }
         }
     }
 
@@ -683,6 +719,9 @@ class Player(private val scope: CoroutineScope) {
         const val POSITION_PUBLISH_MS = 40L
         const val RESTART_WITHIN_MS = 3_000L
         const val RADIO_TOP_UP_AT = 3
+
+        /** Songs, back from the current one, a radio may be started from when the queue ends. */
+        const val RADIO_SEEDS = 4
         const val SKIP_AT_MOST = 3
         const val DECIBEL_BASE = 10.0
         const val DECIBELS_PER_DECADE = 20.0

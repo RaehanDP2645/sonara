@@ -93,24 +93,25 @@ in `docs/perf.md`; never write numbers that were not measured.
   (`YouTubeSongMenu(preview = true)`), not played at once.
 - Playlist import (Library > + > Import playlist, and the desktop's Import): YouTube Music links as
   before (YouTube copies the playlist); Spotify, Deezer and Apple Music playlists and albums are
-  read by the proxy (`/api/import`, Spotify's key in the admin page) and matched on YouTube Music
+  read by the proxy (`/api/import`, no keys) and matched on YouTube Music
   in the app (`utils/ExternalImport.kt`): songs only, never music videos, by ISRC when given,
   else title + artists with the length and album to choose; what isn't found is listed and not
   added. Every failure has its own message (`YouTubePlaylistEditor.ImportError`). Spotify's Web
   API refuses apps whose owner has no Premium (403 on everything, confirmed in the admin Test), so
-  a Spotify list is read with the web player's own access token, which every embed page carries
-  and no app or sign-in is needed for (`SpotifyWeb.php`, kept encrypted for its hour). A playlist
-  goes through the web player's own GraphQL first (`SpotifyPathfinder.php`:
-  `api-partner.spotify.com/pathfinder/v2/query`, `fetchPlaylist` then `fetchPlaylistContents`, 100
-  per page until the end, with a client token from `clienttoken.spotify.com`; every song, Spotify's
-  own playlists too, no ISRC). Its persisted-query hash is built in; on `PersistedQueryNotFound` the
-  new one is read from the web player's script and kept a week, so a Spotify change mends itself.
-  Then, in order: the Web API with the same token (`SpotifyApi.php`, adds ISRCs; answered 429 from
-  a home IP), the owner's own app (`SpotifySource.php`), and Spotify's public embed page
-  (`SpotifyEmbed.php`, the first 100 tracks). The first that answers wins; a refusal of every token
-  way is remembered for 30 minutes. The owner may save an `sp_dc` cookie in the admin page for a
-  list no anonymous token sees (shared but not public, "Made for you"); anonymous is always tried
-  first. One import answers with at most `ImportList::MAX_TRACKS` (2000) songs.
+  a Spotify playlist is read the way the web player reads it (owner's choice: no Spotify app, no
+  Web API): GraphQL at `api-partner.spotify.com/pathfinder/v2/query` (`SpotifyPathfinder.php`,
+  `fetchPlaylist`, then every other page of 100 at once with `fetchPlaylistContents`, six in
+  flight), with the access token every embed page carries and a client token from
+  `clienttoken.spotify.com`, both kept encrypted (`SpotifyWeb.php`), so most imports make no call
+  but the pages. A 401, a forgotten query hash (the new one is read from the web player's script
+  and kept a week) and a moment's 429/5xx are each asked again once. Anonymous first, then the
+  owner's `sp_dc` cookie from the admin page when one is saved. A way rests for 5 minutes only after
+  3 failed imports in a row (the admin Test brings it back). Only when GraphQL cannot read the list
+  does Spotify's public embed page answer (`SpotifyEmbed.php`, the first 100 tracks); albums always
+  come from the embed page. No ISRC from Spotify. One import answers with at most
+  `ImportList::MAX_TRACKS` (2000) songs; only whole answers are kept (`ImportCache`, an hour), so
+  a list cut short is asked for again. Answers say `via` (graphql, embed, deezer, apple) and the
+  admin overview counts whole and 100-only Spotify playlists.
   Songs still not found and without an ISRC are looked up once more: `/api/isrc` asks Deezer's
   open search (`IsrcSource.php`, no key, answers kept) and the app searches again with the ISRC,
   which names one recording exactly. Only the finished list is shown, never a per-song count.
@@ -124,6 +125,11 @@ in `docs/perf.md`; never write numbers that were not measured.
   action of its own, a menu takes one from its list (Play/Shuffle for auto playlists, Add to queue
   for a playlist only in Sonara). No spacers between a menu's groups.
 - The mini player can't be swiped away (that stopped the music); it stays until the queue ends.
+- Autoplay (Settings, `AutoRadioQueueKey` on Android, `Settings.autoplay` on the desktop): once the
+  last song of a queue with nothing more to load starts, a radio of it is added to the queue
+  (`MusicService.appendRadio`, desktop `Player.extendWithRadio`), so there is no gap and Next
+  works on the last song; when that radio brings only songs already queued, the songs before it
+  are tried. Playing a song from History plays its radio, never the list of what was heard.
 - Updates are looked up at launch and every 6 hours while the app runs (desktop: in the tray
   too); "Install unknown apps" allowed in Android's settings carries on with the install. On
   Windows the installer is handed to `cmd /c start` and the app quits 2.5 s later: the MSI's first
