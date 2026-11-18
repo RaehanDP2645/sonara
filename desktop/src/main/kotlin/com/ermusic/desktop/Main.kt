@@ -9,7 +9,6 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.window.PopupProperties
 import androidx.compose.ui.window.Popup
-import com.ermusic.desktop.data.Backup
 import com.ermusic.desktop.window.Uninstall
 import androidx.compose.ui.window.LocalWindowExceptionHandlerFactory
 import com.ermusic.desktop.window.ErrorLog
@@ -180,8 +179,6 @@ fun main(args: Array<String>) {
     }
     LinuxDesktop.nameWindows()
     if (!SingleInstance.claim()) return
-    // A restore chosen last time goes in now, before anything reads the data.
-    runCatching { Backup.applyPending() }.onFailure { ErrorLog.record("restore", it) }
     // Left alone, the client sends the system's full tag (en-ID, say) as hl, and YouTube answers
     // every request with HTTP 400. The app speaks English; the country still picks the charts.
     YouTube.locale = YouTubeLocale(gl = java.util.Locale.getDefault().country.takeIf { it.length == 2 } ?: "US", hl = "en")

@@ -402,7 +402,7 @@ private fun importProblem(error: ImportError): String =
         ImportError.TOO_BIG -> "More than 5,000 songs, over YouTube's limit for one playlist."
         ImportError.OFFLINE -> "Couldn't connect, try again."
         ImportError.SPOTIFY_EDITORIAL ->
-            "Spotify doesn't let apps read its own playlists (like Today's Top Hits or Discover Weekly). Copy the songs into a playlist of yours and share that."
+            "Spotify's own playlists (like Today's Top Hits) can't be imported. Copy the songs into your own playlist first."
         ImportError.NOT_CONFIGURED -> "Importing from Spotify isn't available right now. Try again later."
         ImportError.SOURCE_ERROR -> "The service didn't answer as expected. Try again later."
         ImportError.RATE_LIMITED -> "Too many imports in a short time. Wait a few minutes and try again."

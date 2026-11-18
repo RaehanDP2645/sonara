@@ -131,7 +131,7 @@
     <CustomAction Id="SonaraCloseRunning" BinaryKey="WixCA" DllEntry="WixQuietExec" Execute="immediate" Return="ignore"/>
 
     <!-- Sonara: on a real uninstall (not the one an update does), ask what to do with the user's
-         data: keep it, back it up then delete it, or delete it. SONARA_DATA=keep|delete answers
+         data: keep it or delete it. SONARA_DATA=keep|delete answers
          for silent uninstalls; with no answer and no UI, the data is kept. -->
     <!-- Sonara: on a real uninstall, the entry that opens Sonara at sign-in goes too (it would
          only fail). The user's registry is named by its SID: under the installer, HKCU is not the

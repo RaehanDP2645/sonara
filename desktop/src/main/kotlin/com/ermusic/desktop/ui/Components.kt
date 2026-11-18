@@ -242,7 +242,7 @@ fun Loading(modifier: Modifier = Modifier) {
     Box(modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
 }
 
-const val OFFLINE_PAGE = "You're offline. Downloads and songs you've played lately still play; this page loads when you're back online."
+const val OFFLINE_PAGE = "You're offline. Downloads and recent songs still play."
 const val OFFLINE_SONG = "Offline · plays when you're back online"
 
 /** A strip over the page while YouTube Music can't be reached. */

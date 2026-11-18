@@ -575,10 +575,10 @@ fun LibraryScreen(app: AppState) {
             if (entries.isEmpty()) {
                 Message(
                     when (tab) {
-                        LibraryTab.Albums -> "Albums you save on YouTube Music show up here."
-                        LibraryTab.Artists -> "No artists yet. Artists you subscribe to on YouTube Music show up here."
-                        LibraryTab.Podcasts -> "Shows you save show up here."
-                        else -> "Playlists you make or save show up here."
+                        LibraryTab.Albums -> "No albums yet"
+                        LibraryTab.Artists -> "No artists yet"
+                        LibraryTab.Podcasts -> "No shows yet"
+                        else -> "No playlists yet"
                     },
                 )
             } else {
@@ -902,8 +902,8 @@ fun EpisodesScreen(list: EpisodeList, app: AppState) {
         val tracks = episodes.tracks()
         val empty =
             when (list) {
-                EpisodeList.New -> "New episodes of the shows you save show up here."
-                EpisodeList.Later -> "Episodes you save for later show up here."
+                EpisodeList.New -> "No new episodes"
+                EpisodeList.Later -> "Nothing saved for later"
             }
         SongList(episodes, app, header = {
             Column {
@@ -1050,6 +1050,6 @@ private fun SaveButton(playlistId: String, app: AppState) {
 fun DownloadsScreen(app: AppState) {
     Column(Modifier.fillMaxSize().padding(start = Spacing.L, top = Spacing.S)) {
         PageTitle("Downloads")
-        TrackList(Downloads.tracks, app, "Downloaded songs play without a connection and show up here.")
+        TrackList(Downloads.tracks, app, "No downloads yet")
     }
 }

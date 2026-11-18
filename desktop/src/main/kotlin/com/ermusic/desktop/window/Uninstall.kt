@@ -9,21 +9,16 @@ import com.ermusic.desktop.AppFiles
 import com.ermusic.desktop.Os
 import com.ermusic.desktop.auth.LinuxKeyring
 import com.ermusic.desktop.auth.MacKeychain
-import com.ermusic.desktop.data.Backup
 import java.awt.Desktop
-import java.awt.FileDialog
-import java.awt.Frame
 import java.io.File
-import java.time.LocalDate
 import javax.swing.JOptionPane
 import javax.swing.UIManager
 
 /** What happens to the user's Sonara data when Sonara goes. */
-enum class DataChoice { Keep, BackUpThenDelete, Delete }
+enum class DataChoice { Keep, Delete }
 
 /**
- * Removing Sonara, with the user's say over their data: kept for a later install, saved to a
- * backup first, or deleted. On Windows the installer asks through [fromInstaller]; a Mac and
+ * Removing Sonara, with the user's say over their data: kept for a later install, or deleted. On Windows the installer asks through [fromInstaller]; a Mac and
  * Linux have no uninstaller of their own, so Settings offers it ([uninstallHere]).
  */
 object Uninstall {
@@ -36,36 +31,10 @@ object Uninstall {
         root.deleteRecursively()
     }
 
-    /** A backup's suggested name. */
-    fun backupName(): String = "Sonara-backup-${LocalDate.now()}.zip"
-
-    /** Asks where to save a backup and writes it; false when the user stepped back or it failed. */
-    fun backUpWithDialog(): Boolean {
-        val dialog = FileDialog(null as Frame?, "Save a backup of your Sonara data", FileDialog.SAVE)
-        dialog.directory = File(System.getProperty("user.home"), "Documents").takeIf(File::isDirectory)?.path ?: System.getProperty("user.home")
-        dialog.file = backupName()
-        dialog.isVisible = true
-        val name = dialog.file ?: return false
-        val target = File(dialog.directory, if (name.endsWith(".zip")) name else "$name.zip")
-        return runCatching { Backup.write(target) }.isSuccess
+    /** Carries out [choice] for the data. */
+    fun applyChoice(choice: DataChoice) {
+        if (choice == DataChoice.Delete) deleteData()
     }
-
-    /** Carries out [choice] for the data; false when a backup was asked for and didn't happen. */
-    fun applyChoice(choice: DataChoice): Boolean =
-        when (choice) {
-            DataChoice.Keep -> true
-            DataChoice.Delete -> {
-                deleteData()
-                true
-            }
-            DataChoice.BackUpThenDelete ->
-                if (backUpWithDialog()) {
-                    deleteData()
-                    true
-                } else {
-                    false
-                }
-        }
 
     /**
      * Run by the Windows installer while it removes Sonara (never while it updates it). [answer]
@@ -84,10 +53,7 @@ object Uninstall {
             }
         }
         runCatching { UIManager.setLookAndFeel(UIManager.getSystemLookAndFeelClassName()) }
-        val choice = ask()
-        if (!applyChoice(choice)) {
-            JOptionPane.showMessageDialog(null, "No backup was made, so your Sonara data was kept.", "Uninstall Sonara", JOptionPane.INFORMATION_MESSAGE)
-        }
+        applyChoice(ask())
     }
 
     private fun removeWindowsRunEntry() {
@@ -103,13 +69,11 @@ object Uninstall {
     }
 
     private fun ask(): DataChoice {
-        val options = arrayOf("Keep my data", "Back up, then delete", "Delete everything")
+        val options = arrayOf("Keep my data", "Delete everything")
         val picked =
             JOptionPane.showOptionDialog(
                 null,
-                "Keep your Sonara data?\n\n" +
-                    "Your sign-in, settings, history, downloads and song cache can stay on this computer,\n" +
-                    "so Sonara picks up where you left off if you install it again.",
+                "Keep your Sonara data for a later install?",
                 "Uninstall Sonara",
                 JOptionPane.DEFAULT_OPTION,
                 JOptionPane.QUESTION_MESSAGE,
@@ -117,11 +81,7 @@ object Uninstall {
                 options,
                 options[0],
             )
-        return when (picked) {
-            1 -> DataChoice.BackUpThenDelete
-            2 -> DataChoice.Delete
-            else -> DataChoice.Keep
-        }
+        return if (picked == 1) DataChoice.Delete else DataChoice.Keep
     }
 
     /** What uninstalling from inside the app did, to tell the user. */
@@ -129,8 +89,6 @@ object Uninstall {
         data object Removed : Result
 
         data class RemoveYourself(val how: String) : Result
-
-        data object BackupSkipped : Result
     }
 
     /**
@@ -139,7 +97,7 @@ object Uninstall {
      * password prompt. Where the app can't remove itself, [Result.RemoveYourself] says how.
      */
     fun uninstallHere(choice: DataChoice): Result {
-        if (!applyChoice(choice)) return Result.BackupSkipped
+        applyChoice(choice)
         StartAtLogin.set(false)
         val program = System.getProperty("jpackage.app-path")?.let(::File)
         return when {

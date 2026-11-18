@@ -232,12 +232,12 @@ Data and removal: on Windows the data lives in `%LOCALAPPDATA%\Sonara Data`, apa
 folder (`%LOCALAPPDATA%\Sonara`), because jpackage's uninstaller empties the program folder
 (RemoveFolderEx) and every update runs the old version's uninstaller; up to 2.4.1 the data sat in
 `Sonara\data` and the 2.4.2 installer moves it out first (`wix/main.wxs`). The installer also closes
-the running app itself, and on a real uninstall asks keep / back up then delete / delete through
+the running app itself, and on a real uninstall asks keep / delete through
 `runtimein\javaw.exe ... com.ermusic.desktop.UninstallMain` (not Sonara.exe, which runs the app in a
 second process the installer wouldn't wait for); `SONARA_DATA=keep|delete` answers silent uninstalls.
 Under the installer HKCU is not the user's: name the user's hive as `HKU\[UserSID]`. A Mac and Linux
-have no uninstaller, so Settings has Uninstall Sonara; every platform has Back up and Restore
-(`data/Backup.kt`, never the sign-in). The queue, song and place are kept in `player.json` and come
+have no uninstaller, so Settings has Uninstall Sonara. No backup or restore (removed at the owner's
+request). Settings keeps a line under a title only where the title alone doesn't say it. The queue, song and place are kept in `player.json` and come
 back, paused, at the next start (`Player.restore`/`keepSaved`).
 
 The same app runs on macOS, with nothing left out; `Os.kt` says where it runs, and each Windows piece

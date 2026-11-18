@@ -606,7 +606,7 @@ private fun FoundLyrics(lyrics: Lyrics, player: Player, track: Track, modifier: 
                     val align = if (centered) TextAlign.Center else TextAlign.Start
                     Text("Lyrics from ${lyrics.source}", style = style, color = color, textAlign = align)
                     if (translateOn && translations.isNotEmpty()) Text("Translated automatically, it may not be exact", style = style, color = color, textAlign = align)
-                    Text("Lyrics belong to their songwriters and publishers. Shown for personal, non-commercial use.", style = style, color = color, textAlign = align)
+                    Text("Lyrics belong to their songwriters and publishers.", style = style, color = color, textAlign = align)
                 }
             }
         }
