@@ -5,6 +5,7 @@
 
 package com.metrolist.music.ui.screens.playlist
 
+import com.metrolist.music.utils.compressCover
 import com.metrolist.music.ui.component.DetailPane
 import com.metrolist.music.ui.theme.topBarBackdrop
 import com.metrolist.music.ui.theme.backdropTopBarColors
@@ -1082,25 +1083,20 @@ fun LocalPlaylistHeader(
                 }
 
                 else -> {
-                    val bytes = uriToByteArray(context, uri)
-                    YouTube
-                        .uploadCustomThumbnailLink(
-                            playlist.playlist.browseId,
-                            bytes!!,
-                        ).onSuccess { newThumbnailUrl ->
-                            overrideThumbnail.value = newThumbnailUrl
-                            isCustomThumbnail = true
-
-                            // Update the database with the new thumbnail URL
-                            database.query {
-                                update(playlist.playlist.copy(thumbnailUrl = newThumbnailUrl))
-                            }
-                        }.onFailure {
-                            if (it is ClientRequestException) {
-                                snackbarHostState.showSnackbar("${it.response.status.value} ${it.response.status.description}")
-                            }
-                            reportException(it)
+                    // As in the playlist editor: made small, sent once, shown once YouTube shows it.
+                    val change = compressCover(context, uri)?.let { YouTubePlaylistEditor.replaceCover(playlist.playlist.browseId, it) }
+                    val newThumbnailUrl = change?.url
+                    if (newThumbnailUrl != null) {
+                        overrideThumbnail.value = newThumbnailUrl
+                        isCustomThumbnail = true
+                        database.query {
+                            update(playlist.playlist.copy(thumbnailUrl = newThumbnailUrl))
                         }
+                    } else {
+                        snackbarHostState.showSnackbar(
+                            context.getString(if (change?.accepted == true) R.string.er_playlist_cover_pending else R.string.er_playlist_cover_failed),
+                        )
+                    }
                 }
             }
         }

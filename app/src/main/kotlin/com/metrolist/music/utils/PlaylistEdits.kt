@@ -5,6 +5,9 @@
 
 package com.metrolist.music.utils
 
+import java.io.ByteArrayOutputStream
+import android.graphics.BitmapFactory
+import android.graphics.Bitmap
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.MutableSharedFlow
 import com.metrolist.music.ui.component.RemovedCover
@@ -57,22 +60,19 @@ suspend fun savePlaylistEdits(
             if (!edited && !renamed) return@withContext SaveResult.FAILED
         }
         var thumbnail = playlist.thumbnailUrl
+        var coverPending = false
         val coverOk = when {
             removeCover -> YouTubePlaylistEditor.removeCover(browseId).also { if (it) thumbnail = null }
             newCover != null -> {
-                val bytes = runCatching { context.contentResolver.openInputStream(newCover)?.use { it.readBytes() } }.getOrNull()
-                // Own upload first (live YouTube Music client, account session); InnerTubeX as backup.
-                val uploaded = bytes != null && (
-                    YouTubeWebSession.uploadPlaylistCover(browseId, bytes) ||
-                        YouTube.uploadCustomThumbnailLink(browseId, bytes).isSuccess
-                    )
-                if (uploaded) {
-                    // The same image YouTube now has; kept so it shows before the next sync.
-                    thumbnail = copyCover(context, playlist.id, newCover) ?: thumbnail
+                // Made small first, sent once, and shown only once YouTube shows it.
+                val jpeg = compressCover(context, newCover)
+                val change = jpeg?.let { YouTubePlaylistEditor.replaceCover(browseId, it) }
+                if (change?.accepted == true) {
+                    change.url?.let { thumbnail = it } ?: run { coverPending = true }
                 } else {
-                    Timber.tag("SonaraWeb").w("cover not accepted by YouTube (${bytes?.size} bytes)")
+                    Timber.tag("SonaraWeb").w("cover not accepted by YouTube (${jpeg?.size} bytes)")
                 }
-                uploaded
+                change?.accepted == true
             }
             else -> true
         }
@@ -83,7 +83,11 @@ suspend fun savePlaylistEdits(
             else -> known?.customCover ?: false
         }
         YouTubePlaylistEditor.rememberDetails(browseId, PlaylistDetails(description, privacy, customCover))
-        if (coverOk) SaveResult.SAVED else SaveResult.COVER_FAILED
+        when {
+            !coverOk -> SaveResult.COVER_FAILED
+            coverPending -> SaveResult.COVER_PENDING
+            else -> SaveResult.SAVED
+        }
     }
     // The playlist's page, wherever the edit was opened from (its header, its menu, the library),
     // reloads to show what YouTube now has.
@@ -93,15 +97,48 @@ suspend fun savePlaylistEdits(
             context,
             when (result) {
                 SaveResult.SAVED -> R.string.er_playlist_saved
+                SaveResult.COVER_PENDING -> R.string.er_playlist_cover_pending
                 SaveResult.COVER_FAILED -> R.string.er_playlist_cover_failed
                 SaveResult.FAILED -> R.string.er_playlist_save_failed
             },
         )
     }
-    return result == SaveResult.SAVED
+    return result == SaveResult.SAVED || result == SaveResult.COVER_PENDING
 }
 
-private enum class SaveResult { SAVED, COVER_FAILED, FAILED }
+private enum class SaveResult { SAVED, COVER_PENDING, COVER_FAILED, FAILED }
+
+/**
+ * The chosen cover made small before it is sent: at most [YouTubePlaylistEditor.COVER_SIDE]
+ * pixels on its longest side, JPEG, as the desktop sends it. A full-size photo took too long to
+ * upload, and YouTube shows covers smaller than that anyway.
+ */
+internal fun compressCover(
+    context: Context,
+    source: Uri,
+): ByteArray? =
+    runCatching {
+        val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+        context.contentResolver.openInputStream(source)?.use { BitmapFactory.decodeStream(it, null, bounds) }
+        val longest = maxOf(bounds.outWidth, bounds.outHeight).takeIf { it > 0 } ?: return null
+        var sample = 1
+        while (longest / (sample * 2) >= YouTubePlaylistEditor.COVER_SIDE) sample *= 2
+        val decoded =
+            context.contentResolver.openInputStream(source)?.use {
+                BitmapFactory.decodeStream(it, null, BitmapFactory.Options().apply { inSampleSize = sample })
+            } ?: return null
+        val scale = YouTubePlaylistEditor.COVER_SIDE.toFloat() / maxOf(decoded.width, decoded.height)
+        val sized =
+            if (scale < 1f) {
+                Bitmap.createScaledBitmap(decoded, (decoded.width * scale).toInt(), (decoded.height * scale).toInt(), true)
+            } else {
+                decoded
+            }
+        ByteArrayOutputStream().use { out ->
+            sized.compress(Bitmap.CompressFormat.JPEG, YouTubePlaylistEditor.COVER_QUALITY, out)
+            out.toByteArray()
+        }
+    }.getOrNull()
 
 /**
  * Deletes a playlist on YouTube first, then in SONARA, like every other account change: a

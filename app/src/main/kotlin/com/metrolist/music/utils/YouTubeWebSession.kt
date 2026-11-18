@@ -5,6 +5,7 @@
 
 package com.metrolist.music.utils
 
+import java.util.concurrent.TimeUnit
 import org.json.JSONArray
 import timber.log.Timber
 import com.metrolist.innertube.YouTube
@@ -182,7 +183,18 @@ object YouTubeWebSession {
     suspend fun uploadPlaylistCover(
         playlistId: String,
         image: ByteArray,
+        deadlineMs: Long = System.currentTimeMillis() + COVER_LIMIT_MS,
     ): Boolean = withContext(Dispatchers.IO) {
+        // The image is sent once; every call has only what is left of the time allowed.
+        fun http(): OkHttpClient? {
+            val left = deadlineMs - System.currentTimeMillis()
+            if (left <= 0) return null
+            return http.newBuilder()
+                .callTimeout(left, TimeUnit.MILLISECONDS)
+                .readTimeout(left, TimeUnit.MILLISECONDS)
+                .writeTimeout(left, TimeUnit.MILLISECONDS)
+                .build()
+        }
         val version = currentRemixConfig()?.clientVersion ?: CLIENT_VERSION
         val candidates = listOf(
             "$ORIGIN/playlist_image_upload/playlist_custom_thumbnail",
@@ -200,7 +212,7 @@ object YouTubeWebSession {
                     .post(ByteArray(0).toRequestBody()),
             )?.build() ?: return@withContext false
             val session = runCatching {
-                http.newCall(start).execute().use { r ->
+                (http() ?: return@withContext false).newCall(start).execute().use { r ->
                     val url = r.header("X-Goog-Upload-URL")
                     val id = r.header("X-Goog-Upload-Id") ?: r.header("X-Guploader-Uploadid")
                     Timber.tag(TAG).d("cover start $base: HTTP ${r.code} url=${url != null} id=${id != null} ${if (!r.isSuccessful) r.body.string().take(200) else ""}")
@@ -215,7 +227,7 @@ object YouTubeWebSession {
                     .post(image.toRequestBody("image/jpeg".toMediaType())),
             )?.build() ?: return@withContext false
             val blob = runCatching {
-                http.newCall(upload).execute().use { r ->
+                (http() ?: return@withContext false).newCall(upload).execute().use { r ->
                     val text = r.body.string()
                     Timber.tag(TAG).d("cover upload: HTTP ${r.code} ${text.take(200)}")
                     if (!r.isSuccessful) null else JSONObject(text).optString("encryptedBlobId").takeIf { it.isNotBlank() }
@@ -233,6 +245,7 @@ object YouTubeWebSession {
                 Triple("plain", plain, bareId),
                 Triple("keyed+VL", keyed, "VL$bareId"),
             )) {
+                if (System.currentTimeMillis() >= deadlineMs) return@withContext false
                 val action = JSONObject().put("action", "ACTION_SET_CUSTOM_THUMBNAIL").put("addedCustomThumbnail", thumb)
                 val applied = post(
                     "browse/edit_playlist",
@@ -246,6 +259,9 @@ object YouTubeWebSession {
         }
         false
     }
+
+    /** A cover change, sent and shown by YouTube, has this long; it is never sent twice. */
+    const val COVER_LIMIT_MS = 60_000L
 
     private fun newCpn() = (1..16).map { CPN_ALPHABET[Random.nextInt(CPN_ALPHABET.length)] }.joinToString("")
 

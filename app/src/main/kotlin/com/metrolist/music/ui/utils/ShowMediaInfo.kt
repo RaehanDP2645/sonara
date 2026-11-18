@@ -5,6 +5,7 @@
 
 package com.metrolist.music.ui.utils
 
+import com.metrolist.music.playback.audio.Loudness
 import com.metrolist.music.ui.component.ErToast
 import android.content.ClipData
 import android.content.ClipboardManager
@@ -156,7 +157,7 @@ fun ShowMediaInfo(videoId: String) {
                         R.drawable.content_copy
                     )
 
-                    val measuredLufs: Double? = currentFormat?.perceptualLoudnessDb ?: currentFormat?.loudnessDb?.let { it + LoudnessLevel.AGGRESSIVE.targetLufs }
+                    val measuredLufs: Double? = Loudness.measuredLufs(currentFormat?.loudnessDb, currentFormat?.perceptualLoudnessDb)
 
                     val extendedList = if (currentFormat != null) {
                         listOf(

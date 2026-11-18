@@ -130,6 +130,27 @@ in `docs/perf.md`; never write numbers that were not measured.
   (`MusicService.appendRadio`, desktop `Player.extendWithRadio`), so there is no gap and Next
   works on the last song; when that radio brings only songs already queued, the songs before it
   are tried. Playing a song from History plays its radio, never the list of what was heard.
+- Volume normalization is one piece of code for every platform (`playback/audio/Loudness.kt`,
+  compiled by the desktop as it is): YouTube's `loudnessDb` is relative to -14 LUFS (measured:
+  `perceptualLoudnessDb` = `loudnessDb` - 14), songs go to the chosen Loudness level (Balanced
+  -14 LUFS by default; the desktop has the same setting), down by up to 15 dB and up by up to 6 dB,
+  through `Loudness.Limiter` (stereo-linked, -1 dBFS while raising) instead of clipping. Album
+  mode: songs of one album in a row, not shuffled, share the album's gain (length-weighted energy
+  mean); the album's unmeasured songs are looked up once, two at a time, through the playback
+  extractor (YouTube's plain player call refuses without it). Gain changes ramp over 50 ms.
+- Gapless everywhere (`playback/audio/Gapless.kt`, shared with the desktop): the phone and TV
+  through ExoPlayer's playlist; the desktop hands the open sound card line to the next song's
+  session (`Player.continueGapless`) instead of draining and reopening it, when prepareNext has
+  the next song on disk; Cast keeps the phone's next song in the TV's queue with preload
+  (`SonaraCast.queueNextOnTv`, the song id in each item's customData), and a song picked by hand
+  pauses the TV at once and starts from 0 on both; play from the phone is never sent while the TV
+  still holds another song (paused, then a new song picked), the new song's load starts it. Crossfade never runs inside an album played in
+  its order (`Gapless.albumContinues`, same album id, not shuffled); the old "Disable for gapless
+  albums" setting is gone and this is always so.
+- Playlist covers (`YouTubePlaylistEditor.replaceCover`, every platform): the image is made small
+  first (at most 1000 px, JPEG 85), sent once, all within 60 s (`COVER_LIMIT_MS`), with no
+  second attempt; Sonara never shows a cover YouTube doesn't show yet: it waits for YouTube's own
+  cover URL, and an accepted cover not shown within the minute comes with the next refresh.
 - Updates are looked up at launch and every 6 hours while the app runs (desktop: in the tray
   too); "Install unknown apps" allowed in Android's settings carries on with the install. On
   Windows the installer is handed to `cmd /c start` and the app quits 2.5 s later: the MSI's first

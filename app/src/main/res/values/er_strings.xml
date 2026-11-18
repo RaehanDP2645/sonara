@@ -148,6 +148,7 @@
     <string name="er_turn_off_collaboration_desc">Collaborators will be removed from the playlist. Songs they added will stay.</string>
     <string name="er_turn_off">Turn off</string>
     <string name="er_invite_share_text">Let&#8217;s make a playlist together. Join to add songs: %1$s %2$s</string>
+    <string name="er_playlist_cover_pending">Playlist saved. YouTube has the new cover and shows it here once it\'s ready.</string>
     <string name="er_playlist_cover_failed">Details saved, but YouTube didn&#8217;t accept the cover</string>
     <string name="er_playlist_created">Playlist created</string>
     <string name="er_playlist_create_failed">Couldn&#8217;t create the playlist on YouTube. Try again.</string>

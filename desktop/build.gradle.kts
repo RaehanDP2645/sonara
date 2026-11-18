@@ -85,6 +85,8 @@ val fromAndroid by tasks.registering(Sync::class) {
         include("music/utils/SonaraLinks.kt", "music/utils/ExternalImport.kt")
         // The updater's release check, shared with the phone (desktop/.../update/DesktopUpdater.kt).
         include("music/update/ReleaseCheck.kt")
+        // Volume normalization: the same levels, album mode and limiter as the phone.
+        include("music/playback/audio/Loudness.kt", "music/playback/audio/Gapless.kt")
         listOf(
             "LyricsProvider", "LyricsUtils", "LyricsEntry", "BetterLyricsProvider", "LrcLibLyricsProvider", "KuGouLyricsProvider",
             "PaxsenixLyricsProvider", "LyricsPlusProvider", "ZemerLyricsProvider", "YouTubeLyricsProvider", "YouTubeSubtitleLyricsProvider",

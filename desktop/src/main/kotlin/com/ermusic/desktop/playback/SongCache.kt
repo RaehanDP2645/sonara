@@ -48,6 +48,9 @@ object SongCache {
     /** Whether the song is on the computer already (downloaded or fetched before), so it plays offline. */
     fun isStored(videoId: String): Boolean = Downloads.fileFor(videoId).exists() || File(dir, "$videoId.audio").exists()
 
+    /** What YouTube said of the song's loudness when it was fetched, if it is on the computer. */
+    fun loudnessDb(videoId: String): Double? = runCatching { loudnessFile(videoId).readText().toDouble() }.getOrNull()
+
     private fun stored(file: File, videoId: String): LocalSong =
         LocalSong(file, runCatching { loudnessFile(videoId).readText().toDouble() }.getOrNull())
 

@@ -22,6 +22,8 @@ import androidx.media3.common.Player
 import com.google.android.gms.cast.CastMediaControlIntent
 import com.google.android.gms.cast.MediaInfo
 import com.google.android.gms.cast.MediaLoadRequestData
+import com.google.android.gms.cast.MediaQueueItem
+import org.json.JSONObject
 import com.google.android.gms.cast.MediaSeekOptions
 import com.google.android.gms.cast.MediaStatus
 import com.google.android.gms.cast.framework.CastContext
@@ -107,6 +109,12 @@ data class CastState(
  * play pressed on the TV (or in Google Home) reaches the phone. A dropped connection waits for the
  * TV to come back instead of ending the cast. Crossfade stays off while casting (MusicService).
  *
+ * Gapless: the phone's next song is put in the TV's own queue ahead of time ([queueNextOnTv]),
+ * so the TV loads it [PRELOAD_S] seconds before the song ends and runs straight into it, as the
+ * phone does; Sonara then only follows. A song picked by hand that is not the queued one pauses
+ * the TV at once, so the old song never plays on while the new one is looked up, and starts from
+ * its beginning on both.
+ *
  * Known limits of this trial: the stream is fetched twice (phone and TV), downloads are streamed
  * rather than sent from the phone, and some streams may be refused by the TV because YouTube
  * expects headers the receiver cannot send.
@@ -130,6 +138,23 @@ object SonaraCast {
     private var loadedId: String? = null
     private var loadedInfo: MediaInfo? = null
     private var loadingId: String? = null
+
+    /** The TV's queue item for [loadedId]; another one with the queued song means the TV moved on by itself. */
+    private var loadedItemId: Int? = null
+
+    /** The song put after [loadedId] in the TV's queue, and what was sent for it. */
+    private var tvNextId: String? = null
+    private var tvNextInfo: MediaInfo? = null
+    private var nextJob: Job? = null
+
+    /** The phone moved on to the queued song first: the TV is let finish and follow by itself. */
+    private var awaitingId: String? = null
+    private var awaitingSince = 0L
+
+    /** The TV moved on to the queued song first: the phone's own move to it then needs nothing. */
+    private var advancedId: String? = null
+    private var advancedAt = 0L
+    private var nextSentAt = 0L
 
     /** Failed loads in a row for [failedId]; after [MAX_FAILURES] that song is left alone. */
     private var failedId: String? = null
@@ -230,6 +255,18 @@ object SonaraCast {
 
     private const val MAX_FAILURES = 3
 
+    /** Seconds before a song ends that the TV starts loading the next (gapless). */
+    private const val PRELOAD_S = 20.0
+
+    /** How long the phone waits for the TV to move on to the queued song by itself. */
+    private const val AWAIT_MS = 4_000L
+
+    /** A song picked by hand starts from 0 on both while the phone is no further into it than this. */
+    private const val FROM_START_MS = 10_000L
+
+    /** Key of the song's id in what is sent to the TV, read back from its status. */
+    private const val ID_KEY = "sonaraId"
+
     fun stopCasting() {
         castContext?.sessionManager?.endCurrentSession(true)
     }
@@ -246,6 +283,81 @@ object SonaraCast {
     /** The phone's song, when the player is on one. */
     private fun phoneSong(): String? = player?.currentMediaItem?.metadata?.id
 
+    /** The song the TV is on, from what Sonara sent it. */
+    private fun tvSong(): String? = remote?.mediaInfo?.customData?.optString(ID_KEY)?.takeIf { it.isNotEmpty() }
+
+    /** The song the phone plays after this one: the same song again with Repeat one. */
+    private fun phoneNext(): com.metrolist.music.models.MediaMetadata? {
+        val p = player ?: return null
+        val index = if (p.repeatMode == Player.REPEAT_MODE_ONE) p.currentMediaItemIndex else p.nextMediaItemIndex
+        if (index == androidx.media3.common.C.INDEX_UNSET || index >= p.mediaItemCount) return null
+        return p.getMediaItemAt(index).metadata
+    }
+
+    /**
+     * Keeps the TV's queue as the song it plays and, after it, the phone's next song, preloaded:
+     * the TV then goes on without a gap. Played songs and a next song the phone no longer has
+     * (the queue changed, shuffle, repeat) are taken out.
+     */
+    private fun queueNextOnTv() {
+        val r = remote ?: return
+        val context = appContext ?: return
+        if (loadJob?.isActive == true || loadedId == null || tvSong() != loadedId) return
+        val next = phoneNext()
+        val status = r.mediaStatus ?: return
+        val items = status.queueItems.orEmpty()
+        val at = items.indexOfFirst { it.itemId == status.currentItemId }
+        val after = if (at >= 0) items.drop(at + 1) else emptyList()
+        val before = if (at > 0) items.take(at) else emptyList()
+        val queuedRight = next != null && tvNextId == next.id && after.size <= 1 &&
+            after.all { it.media?.customData?.optString(ID_KEY) == next.id }
+        if (queuedRight && (after.isNotEmpty() || items.isEmpty() || SystemClock.uptimeMillis() - nextSentAt < SETTLE_MS)) return
+        nextJob?.cancel()
+        nextJob =
+            scope?.launch {
+                val stale = (before + after).map { it.itemId }
+                if (stale.isNotEmpty()) r.queueRemoveItems(stale.toIntArray(), null)
+                tvNextId = null
+                if (next == null) return@launch
+                val info = tvNextInfo?.takeIf { it.customData?.optString(ID_KEY) == next.id } ?: buildInfo(context, next) ?: return@launch
+                if (remote !== r || tvSong() != loadedId) return@launch
+                val item =
+                    MediaQueueItem.Builder(info)
+                        .setPreloadTime(PRELOAD_S)
+                        .setAutoplay(true)
+                        .apply { if (info.mediaTracks?.isNotEmpty() == true) setActiveTrackIds(longArrayOf(LYRICS_TRACK_ID)) }
+                        .build()
+                tvNextId = next.id
+                tvNextInfo = info
+                nextSentAt = SystemClock.uptimeMillis()
+                r.queueAppendItem(item, null)
+            }
+    }
+
+    /** The TV moved on to the queued song by itself: that song is now the one on it. */
+    private fun followTvAdvance() {
+        val status = remote?.mediaStatus ?: return
+        val tv = tvSong() ?: return
+        if (loadJob?.isActive == true) return
+        if (loadedItemId == null) {
+            if (tv == loadedId) loadedItemId = status.currentItemId
+            return
+        }
+        if (status.currentItemId == loadedItemId || tv != tvNextId) return
+        loadedId = tv
+        loadedInfo = tvNextInfo
+        loadedItemId = status.currentItemId
+        tvNextId = null
+        tvNextInfo = null
+        if (awaitingId == tv) {
+            awaitingId = null
+        } else {
+            advancedId = tv
+            advancedAt = SystemClock.uptimeMillis()
+        }
+        queueNextOnTv()
+    }
+
     private fun onConnected(
         session: CastSession,
         resumed: Boolean,
@@ -259,6 +371,9 @@ object SonaraCast {
         if (!stillOurs) {
             loadedId = null
             loadedInfo = null
+            loadedItemId = null
+            tvNextId = null
+            tvNextInfo = null
         }
         loadingId = null
         failures = 0
@@ -281,6 +396,12 @@ object SonaraCast {
         loadedId = null
         loadedInfo = null
         loadingId = null
+        loadedItemId = null
+        tvNextId = null
+        tvNextInfo = null
+        nextJob?.cancel()
+        awaitingId = null
+        advancedId = null
         localVolume.value = 1f
         _state.value = _state.value.copy(casting = false, deviceName = null)
     }
@@ -301,9 +422,18 @@ object SonaraCast {
         if (!again && (loadedId == meta.id || loadingId == meta.id)) return
         if (failedId == meta.id && failures >= MAX_FAILURES) return
         loadJob?.cancel()
+        nextJob?.cancel()
         loadingId = meta.id
+        awaitingId = null
+        advancedId = null
+        // Another song on the TV: stopped now, not after the new one is found.
+        if (!again && tvSong() != null && tvSong() != meta.id) {
+            sent()
+            remote?.pause()
+        }
         loadJob = scope?.launch {
             val reuse = loadedInfo?.takeIf { !fresh && loadedId == meta.id }
+                ?: tvNextInfo?.takeIf { !fresh && it.customData?.optString(ID_KEY) == meta.id }
             val info = reuse ?: buildInfo(context, meta) ?: run {
                 loadingId = null
                 failed(meta.id, null)
@@ -314,11 +444,13 @@ object SonaraCast {
                 return@launch
             }
             // Read now, not when asked: finding the stream takes a moment the phone keeps playing.
+            // A new song starts at its beginning on the TV, and the phone goes back to it too.
             val now = player?.takeIf { phoneSong() == meta.id }
+            val fromStart = !again && (now?.currentPosition ?: 0L) < FROM_START_MS
             val request = MediaLoadRequestData.Builder()
                 .setMediaInfo(info)
                 .setAutoplay(now?.playWhenReady ?: true)
-                .setCurrentTime(now?.currentPosition ?: 0L)
+                .setCurrentTime(if (fromStart) 0L else now?.currentPosition ?: 0L)
                 .apply { if (info.mediaTracks?.isNotEmpty() == true) setActiveTrackIds(longArrayOf(LYRICS_TRACK_ID)) }
                 .build()
             sent()
@@ -327,8 +459,16 @@ object SonaraCast {
                 if (result.status.isSuccess) {
                     loadedId = meta.id
                     loadedInfo = info
+                    loadedItemId = null
+                    tvNextId = null
                     if (failedId == meta.id) failures = 0
                     _state.value = _state.value.copy(error = null)
+                    if (fromStart) player?.takeIf { phoneSong() == meta.id && it.currentPosition < FROM_START_MS }?.seekTo(0L)
+                    scope?.launch {
+                        delay(SETTLE_MS / 3)
+                        followTvAdvance()
+                        queueNextOnTv()
+                    }
                 } else {
                     failed(meta.id, result.status.statusMessage ?: "Cast load failed (${result.status.statusCode})")
                 }
@@ -376,6 +516,7 @@ object SonaraCast {
         val vtt = lyricsFor?.invoke(meta.id)
         return MediaInfo.Builder(playback.streamUrl)
             .setStreamType(MediaInfo.STREAM_TYPE_BUFFERED)
+            .setCustomData(JSONObject().put(ID_KEY, meta.id))
             .setContentType(playback.format.mimeType.substringBefore(";").trim())
             .setMetadata(castMeta)
             .apply {
@@ -421,10 +562,25 @@ object SonaraCast {
         val p = player ?: return
         val r = remote ?: return
         val id = phoneSong() ?: return
+        followTvAdvance()
+        // The TV ran into the next song a moment before the phone: the phone follows by itself.
+        if (advancedId == loadedId && id != loadedId && SystemClock.uptimeMillis() - advancedAt < AWAIT_MS) return
+        if (id != loadedId && id == awaitingId) {
+            if (SystemClock.uptimeMillis() - awaitingSince < AWAIT_MS) return
+            awaitingId = null
+            if (tvNextId == id) {
+                sent()
+                r.queueNext(null)
+            } else {
+                loadCurrent()
+            }
+            return
+        }
         if (id != loadedId) {
             loadCurrent()
             return
         }
+        queueNextOnTv()
         if (!settled() || loadJob?.isActive == true) return
         val status = r.mediaStatus ?: return
         when (status.playerState) {
@@ -451,14 +607,55 @@ object SonaraCast {
     private val playerListener = object : Player.Listener {
         override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
             if (session == null) return
-            if (reason == Player.MEDIA_ITEM_TRANSITION_REASON_REPEAT || mediaItem?.metadata?.id == loadedId) restartOnTv() else loadCurrent()
+            val id = mediaItem?.metadata?.id
+            val byItself = reason == Player.MEDIA_ITEM_TRANSITION_REASON_AUTO || reason == Player.MEDIA_ITEM_TRANSITION_REASON_REPEAT
+            when {
+                // The TV ran into it gaplessly first: nothing to do.
+                id != null && id == advancedId -> {
+                    advancedId = null
+                    queueNextOnTv()
+                }
+                // The TV has it queued: it finishes its song and runs into it by itself.
+                id != null && id == tvNextId && byItself -> {
+                    awaitingId = id
+                    awaitingSince = SystemClock.uptimeMillis()
+                }
+                // Next pressed onto the queued song: it is loaded already, so the TV jumps at once.
+                id != null && id == tvNextId -> {
+                    sent()
+                    awaitingId = id
+                    awaitingSince = SystemClock.uptimeMillis()
+                    remote?.queueNext(null)
+                }
+                reason == Player.MEDIA_ITEM_TRANSITION_REASON_REPEAT || id == loadedId -> restartOnTv()
+                else -> loadCurrent()
+            }
+        }
+
+        // What comes next changed: the TV's queued song follows.
+        override fun onTimelineChanged(timeline: androidx.media3.common.Timeline, reason: Int) {
+            if (session != null) queueNextOnTv()
+        }
+
+        override fun onShuffleModeEnabledChanged(shuffleModeEnabled: Boolean) {
+            if (session != null) queueNextOnTv()
+        }
+
+        override fun onRepeatModeChanged(repeatMode: Int) {
+            if (session != null) queueNextOnTv()
         }
 
         override fun onPlayWhenReadyChanged(playWhenReady: Boolean, reason: Int) {
             val r = remote ?: return
             sent()
             val idle = r.mediaStatus?.playerState?.let { it == MediaStatus.PLAYER_STATE_IDLE } ?: true
+            val tv = tvSong()
             when {
+                // Paused, then another song picked: the TV still holds the old one, so play would
+                // only bring the old song back for a moment. The new song's load starts it instead
+                // (it carries the phone's play state).
+                playWhenReady && loadingId != null && loadingId == phoneSong() -> Unit
+                playWhenReady && tv != null && tv != phoneSong() -> loadCurrent()
                 // The TV let the song go (it closes a paused song after a while): load it again.
                 playWhenReady && idle -> loadCurrent(again = true)
                 playWhenReady -> r.play()
@@ -483,6 +680,7 @@ object SonaraCast {
         override fun onStatusUpdated() {
             val p = player ?: return
             val status = remote?.mediaStatus ?: return
+            followTvAdvance()
             if (!settled() || loadedId != phoneSong()) return
             when (status.playerState) {
                 MediaStatus.PLAYER_STATE_PAUSED -> if (p.playWhenReady) p.pause()

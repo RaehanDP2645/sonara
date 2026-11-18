@@ -67,11 +67,13 @@ import java.awt.Frame
 import java.awt.image.BufferedImage
 import java.io.ByteArrayOutputStream
 import java.io.File
+import javax.imageio.IIOImage
 import javax.imageio.ImageIO
+import javax.imageio.ImageWriteParam
 
 private val DialogWidth = 460.dp
 private val ResultsHeight = 360.dp
-private const val COVER_SIDE = 1000
+private const val COVER_SIDE = YouTubePlaylistEditor.COVER_SIDE
 private const val SEARCH_DEBOUNCE_MS = 350L
 
 /** The picked image, cropped to a centred square, as JPEG bytes. */
@@ -83,7 +85,19 @@ private fun coverBytes(file: File): ByteArray? =
         val canvas = square.createGraphics()
         canvas.drawImage(source, 0, 0, COVER_SIDE, COVER_SIDE, (source.width - side) / 2, (source.height - side) / 2, (source.width + side) / 2, (source.height + side) / 2, null)
         canvas.dispose()
-        ByteArrayOutputStream().also { ImageIO.write(square, "jpeg", it) }.toByteArray()
+        // The same small JPEG the phone sends (YouTubePlaylistEditor.replaceCover).
+        val writer = ImageIO.getImageWritersByFormatName("jpeg").next()
+        val settings = writer.defaultWriteParam.apply {
+            compressionMode = ImageWriteParam.MODE_EXPLICIT
+            compressionQuality = YouTubePlaylistEditor.COVER_QUALITY / 100f
+        }
+        ByteArrayOutputStream().also { out ->
+            ImageIO.createImageOutputStream(out).use { stream ->
+                writer.output = stream
+                writer.write(null, IIOImage(square, null, null), settings)
+            }
+            writer.dispose()
+        }.toByteArray()
     }.getOrNull()
 
 private fun pickImage(): File? {
@@ -114,16 +128,17 @@ fun EditPlaylistDialog(playlist: PlaylistItem, app: AppState) {
         }
     }
 
-    fun coverAction(failure: String, call: suspend () -> Boolean) {
+    /** [call] answers the message to show once YouTube took the change, or null when it refused it. */
+    fun coverAction(failure: String, call: suspend () -> String?) {
         busy = true
         problem = null
         scope.launch {
             val done = withContext(Dispatchers.IO) { call() }
             busy = false
-            if (done) {
+            if (done != null) {
                 app.playlistChanged()
                 details = withContext(Dispatchers.IO) { YouTubePlaylistEditor.details(playlist.id) } ?: details
-                app.showToast("Cover updated")
+                app.showToast(done)
             } else {
                 problem = failure
             }
@@ -142,14 +157,23 @@ fun EditPlaylistDialog(playlist: PlaylistItem, app: AppState) {
                     Column(verticalArrangement = Arrangement.spacedBy(Spacing.S)) {
                         OutlinedButton(enabled = !busy, modifier = Modifier.handCursor(), onClick = {
                             val bytes = pickImage()?.let(::coverBytes)
-                            if (bytes != null) coverAction("YouTube didn't accept that image.") { YouTubeWebSession.uploadPlaylistCover(playlist.id, bytes) }
+                            if (bytes != null) {
+                                coverAction("YouTube didn't accept that image.") {
+                                    val change = YouTubePlaylistEditor.replaceCover(playlist.id, bytes)
+                                    when {
+                                        !change.accepted -> null
+                                        change.url == null -> "YouTube has the new cover and shows it once it's ready"
+                                        else -> "Cover updated"
+                                    }
+                                }
+                            }
                         }) {
                             Icon(icon("insert_photo"), null, modifier = Modifier.size(Size.IconSmall))
                             Spacer(Modifier.width(Spacing.XS))
                             Text("Change cover")
                         }
                         if (details?.customCover == true) {
-                            TextButton(enabled = !busy, modifier = Modifier.handCursor(), onClick = { coverAction("Couldn't remove the cover.") { YouTubePlaylistEditor.removeCover(playlist.id) } }) { Text("Remove cover") }
+                            TextButton(enabled = !busy, modifier = Modifier.handCursor(), onClick = { coverAction("Couldn't remove the cover.") { "Cover removed".takeIf { YouTubePlaylistEditor.removeCover(playlist.id) } } }) { Text("Remove cover") }
                         }
                     }
                 }

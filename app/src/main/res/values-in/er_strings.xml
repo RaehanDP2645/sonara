@@ -145,6 +145,7 @@
     <string name="er_turn_off_collaboration_desc">Kolaborator akan dikeluarkan dari playlist. Lagu yang mereka tambahkan tetap ada.</string>
     <string name="er_turn_off">Matikan</string>
     <string name="er_invite_share_text">Ayo buat playlist bareng. Gabung untuk menambahkan lagu: %1$s %2$s</string>
+    <string name="er_playlist_cover_pending">Playlist disimpan. YouTube sudah menerima cover baru dan akan tampil di sini begitu siap.</string>
     <string name="er_playlist_cover_failed">Detail tersimpan, tetapi YouTube tidak menerima covernya</string>
     <string name="er_playlist_created">Playlist dibuat</string>
     <string name="er_playlist_create_failed">Gagal membuat playlist di YouTube. Coba lagi.</string>

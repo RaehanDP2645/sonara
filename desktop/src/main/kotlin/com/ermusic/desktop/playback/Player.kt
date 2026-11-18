@@ -5,6 +5,9 @@
 
 package com.ermusic.desktop.playback
 
+import com.metrolist.music.playback.audio.Gapless
+import java.util.concurrent.ConcurrentHashMap
+import com.metrolist.music.playback.audio.Loudness
 import com.ermusic.desktop.data.History
 import com.ermusic.desktop.data.Settings
 import com.metrolist.innertube.YouTube
@@ -36,7 +39,6 @@ import javax.sound.sampled.AudioFormat
 import javax.sound.sampled.AudioSystem
 import javax.sound.sampled.SourceDataLine
 import kotlin.math.abs
-import kotlin.math.pow
 import kotlin.math.roundToInt
 
 /** One person credited on a song; [id] is missing when YouTube gave only the name. */
@@ -134,6 +136,13 @@ class Player(private val scope: CoroutineScope) {
 
     /** The song fading out under a crossfade. */
     @Volatile private var outgoing: Session? = null
+
+    /** Songs' loudness in LUFS, as YouTube measured them (album mode, [Loudness.albumLufs]). */
+    private val songLufs = ConcurrentHashMap<String, Double>()
+
+    /** Albums whose songs have all been looked up this run. */
+    private val albumsLookedUp = ConcurrentHashMap.newKeySet<String>()
+    private var albumLookup: Job? = null
 
     fun play(tracks: List<Track>, start: Int = 0) {
         if (tracks.isEmpty()) return
@@ -400,10 +409,20 @@ class Player(private val scope: CoroutineScope) {
         session?.cancelled = true
         session = null
         loadJob?.cancel()
+        pendingLine?.close()
+        pendingLine = null
         mutableState.update { it.copy(playing = false) }
     }
 
-    private fun load(index: Int, fromMs: Long = 0, crossfadeMs: Long = 0, skipHidden: Boolean = true) {
+    /**
+     * The sound card line a song that ended handed on (gapless), until the next song's session
+     * takes it; closed if that song never starts (skipped, or it can't be fetched).
+     */
+    @Volatile private var pendingLine: SourceDataLine? = null
+
+    private fun load(index: Int, fromMs: Long = 0, crossfadeMs: Long = 0, skipHidden: Boolean = true, line: SourceDataLine? = null) {
+        pendingLine?.takeIf { it !== line }?.close()
+        pendingLine = line
         // "Hide music videos" (Settings, off by default): a music video the queue moves to, by
         // itself or with Next or Previous, is skipped onward in that direction.
         if (skipHidden && Settings.hideVideos.value) {
@@ -412,7 +431,7 @@ class Player(private val scope: CoroutineScope) {
                 val wrapped = index == 0 && state.index == state.queue.lastIndex
                 val target = playableNear(state, index, backwards = index < state.index && !wrapped)
                 when {
-                    target != null -> load(target, fromMs, crossfadeMs, skipHidden = false)
+                    target != null -> load(target, fromMs, crossfadeMs, skipHidden = false, line = line)
                     index > state.index || wrapped -> stopAtEnd()
                 }
                 return
@@ -437,12 +456,67 @@ class Player(private val scope: CoroutineScope) {
                 val song = fetch(track, index) ?: return@launch
                 if (!isActive) return@launch
                 failedInARow = 0
-                session = Session(song, fromMs, crossfadeMs).also { it.start() }
+                Loudness.measuredLufs(song.loudnessDb, null)?.let { songLufs[track.id] = it }
+                val handed = pendingLine?.also { pendingLine = null }
+                session = Session(song, track.id, fromMs, crossfadeMs, normalizeGain(track.id), handed).also { it.start() }
                 prepareNext()
+                lookUpAlbum()
             }
     }
 
     private var failedInARow = 0
+
+    /** The album the song is played as part of: its songs in a row, in order, not shuffled. */
+    private fun albumRun(state: PlayerState, id: String): Pair<String, List<Track>>? {
+        if (state.shuffle || state.current?.id != id) return null
+        val album = state.current?.albumId ?: return null
+        val run = Loudness.albumRun(state.queue, state.index) { it.albumId } ?: return null
+        return album to state.queue.slice(run)
+    }
+
+    /** The linear gain for the song: the album's in album mode, else its own; 1 when off or unknown. */
+    private fun normalizeGain(id: String): Double {
+        if (!Settings.normalize.value) return 1.0
+        val target = runCatching { Loudness.Level.valueOf(Settings.loudnessLevel.value) }.getOrDefault(Loudness.Level.BALANCED).lufs
+        val album =
+            albumRun(mutableState.value, id)?.let { (album, songs) ->
+                Loudness.albumLufs(songs.map { Loudness.Song(songLufs[it.id], it.durationMs / MS_PER_SECOND.toDouble()) }, album in albumsLookedUp)
+            }
+        return Loudness.gainDb(songLufs[id], album, target)?.let(Loudness::linear) ?: 1.0
+    }
+
+    /**
+     * Album mode needs every song's loudness before the album's gain is known: the album's songs
+     * not measured yet are looked up once (two at a time), then the gain moves smoothly to it.
+     */
+    private fun lookUpAlbum() {
+        if (!Settings.normalize.value || albumLookup?.isActive == true) return
+        val state = mutableState.value
+        val current = state.current ?: return
+        val (album, songs) = albumRun(state, current.id) ?: return
+        if (album in albumsLookedUp) return
+        albumLookup =
+            scope.launch(Dispatchers.IO) {
+                val missing =
+                    songs.map { it.id }.filter { id ->
+                        if (songLufs.containsKey(id)) return@filter false
+                        val lufs = Loudness.measuredLufs(SongCache.loudnessDb(id), null)
+                        lufs?.let { songLufs[id] = it }
+                        lufs == null
+                    }
+                missing.chunked(ALBUM_LOOKUPS_AT_ONCE).forEach { ids ->
+                    ids.map { id ->
+                        async {
+                            runCatching { StreamResolver.resolve(id).loudnessDb }.getOrNull()
+                                ?.let { Loudness.measuredLufs(it, null) }
+                                ?.let { songLufs[id] = it }
+                        }
+                    }.forEach { it.await() }
+                }
+                albumsLookedUp += album
+                session?.let { it.limiter.targetGain = normalizeGain(it.trackId) }
+            }
+    }
 
     /**
      * The song's audio, fetched whole. Without a connection, a song further on that is already on
@@ -530,6 +604,32 @@ class Player(private val scope: CoroutineScope) {
         }
     }
 
+    /**
+     * Gapless: the song ended by itself, so the next one starts on the same sound card line, which
+     * still holds the last moment of this one, instead of waiting for it to drain and opening a new
+     * line. Only when the next song is on the computer already (prepareNext fetches it ahead);
+     * false sends the end the usual way.
+     */
+    private fun continueGapless(line: SourceDataLine): Boolean {
+        val state = mutableState.value
+        if (state.sleepAfterSong) return false
+        val index =
+            when {
+                state.repeat == Repeat.One -> state.index
+                state.next != null -> if (state.index + 1 in state.queue.indices) state.index + 1 else 0
+                else -> return false
+            }
+        val track = state.queue.getOrNull(index) ?: return false
+        if (!SongCache.isStored(track.id)) return false
+        session = null
+        load(index, line = line)
+        return true
+    }
+
+    /** No crossfade into the next song when it carries the album on: albums play gaplessly (Gapless). */
+    private fun albumContinues(state: PlayerState): Boolean =
+        Gapless.albumContinues(state.current?.albumId, state.next?.albumId, state.shuffle)
+
     private fun onSongEnded() {
         session = null
         val state = mutableState.value
@@ -543,6 +643,8 @@ class Player(private val scope: CoroutineScope) {
     }
 
     private fun stopAtEnd() {
+        pendingLine?.close()
+        pendingLine = null
         mutablePosition.value = 0
         mutableState.update { it.copy(playing = false) }
     }
@@ -559,18 +661,30 @@ class Player(private val scope: CoroutineScope) {
         }
     }
 
-    private inner class Session(private val song: LocalSong, private val startMs: Long, private val fadeInMs: Long) : Thread("sonara-audio") {
+    private inner class Session(
+        private val song: LocalSong,
+        val trackId: String,
+        private val startMs: Long,
+        private val fadeInMs: Long,
+        gain: Double,
+        /** The line the song before handed on (gapless), or null to open one. */
+        private val handedLine: SourceDataLine? = null,
+    ) : Thread("sonara-audio") {
         @Volatile var cancelled = false
 
         @Volatile var seekTo = NO_SEEK
 
         private var handedOffAtMs = NOT_HANDED_OFF
         private var totalMs = 0L
+
+        /** The line went on to the next song (gapless). */
+        private var handedOn = false
         private val equalizer = Equalizer(SAMPLE_RATE)
 
-        // Only ever turned down: raising a quiet song could clip it.
-        private val normalizeGain =
-            song.loudnessDb?.takeIf { Settings.normalize.value && it > 0 }?.let { DECIBEL_BASE.pow(-it / DECIBELS_PER_DECADE).toFloat() } ?: 1f
+        /** Volume normalization: the song's (or album's) gain through the limiter shared with the phone. */
+        val limiter = Loudness.Limiter(SAMPLE_RATE).apply { targetGain = gain }
+        private val normalizing = Settings.normalize.value
+        private val stereo = DoubleArray(CHANNELS)
 
         init {
             isDaemon = true
@@ -587,14 +701,18 @@ class Player(private val scope: CoroutineScope) {
                     grabber.start()
                     if (startMs > 0) moveTo(grabber, startMs)
                     val format = AudioFormat(SAMPLE_RATE.toFloat(), BITS, CHANNELS, true, false)
-                    val line = AudioSystem.getSourceDataLine(format)
-                    line.open(format, BUFFER_BYTES)
+                    val line =
+                        handedLine ?: AudioSystem.getSourceDataLine(format).apply { open(format, BUFFER_BYTES) }
                     line.start()
                     totalMs = grabber.lengthInTime / US_PER_MS
                     mutableState.update { it.copy(loading = false, durationMs = totalMs, error = null) }
                     ended = pump(grabber, line)
-                    if (ended && !cancelled) line.drain()
-                    line.close()
+                    if (ended && !cancelled && handedOffAtMs == NOT_HANDED_OFF && continueGapless(line)) {
+                        handedOn = true
+                    } else {
+                        if (ended && !cancelled) line.drain()
+                        line.close()
+                    }
                 }
             } catch (error: Exception) {
                 if (!cancelled) {
@@ -603,7 +721,7 @@ class Player(private val scope: CoroutineScope) {
                 }
                 return
             }
-            if (ended && !cancelled && handedOffAtMs == NOT_HANDED_OFF) onSongEnded()
+            if (ended && !cancelled && handedOffAtMs == NOT_HANDED_OFF && !handedOn) onSongEnded()
         }
 
         /** Decodes until the song ends (true) or this session is cancelled (false). */
@@ -630,7 +748,7 @@ class Player(private val scope: CoroutineScope) {
                 if (count * 2 > bytes.size) bytes = ByteArray(count * 2)
                 val at = grabber.timestamp / US_PER_MS
                 handOffIfDue(at, state)
-                val gain = if (state.muted) 0f else state.volume * state.volume * normalizeGain * fade(at)
+                val gain = if (state.muted) 0.0 else (state.volume * state.volume * fade(at)).toDouble() * FULL_SCALE
                 val equalize = Settings.eqEnabled.value
                 val mono = Settings.mono.value
                 val gains = Settings.eqGains.value
@@ -647,8 +765,11 @@ class Player(private val scope: CoroutineScope) {
                         left = (left + right) / 2
                         right = left
                     }
-                    writeSample(bytes, i, left * gain)
-                    writeSample(bytes, i + 1, right * gain)
+                    stereo[0] = left / FULL_SCALE
+                    stereo[1] = right / FULL_SCALE
+                    if (normalizing) limiter.process(stereo, CHANNELS)
+                    writeSample(bytes, i, stereo[0] * gain)
+                    writeSample(bytes, i + 1, stereo[1] * gain)
                     i += 2
                 }
                 line.write(bytes, 0, count * 2)
@@ -689,7 +810,7 @@ class Player(private val scope: CoroutineScope) {
             val crossfade = Settings.crossfadeSeconds.value * MS_PER_SECOND
             if (crossfade <= 0 || handedOffAtMs != NOT_HANDED_OFF || session !== this) return
             if (totalMs < crossfade * 2 || totalMs - at > crossfade) return
-            if (state.next == null || state.repeat == Repeat.One || state.sleepAfterSong) return
+            if (state.next == null || state.repeat == Repeat.One || state.sleepAfterSong || albumContinues(state)) return
             handedOffAtMs = at
             load(if (state.index + 1 in state.queue.indices) state.index + 1 else 0, crossfadeMs = crossfade)
         }
@@ -723,8 +844,10 @@ class Player(private val scope: CoroutineScope) {
         /** Songs, back from the current one, a radio may be started from when the queue ends. */
         const val RADIO_SEEDS = 4
         const val SKIP_AT_MOST = 3
-        const val DECIBEL_BASE = 10.0
-        const val DECIBELS_PER_DECADE = 20.0
+        const val FULL_SCALE = 32768.0
+
+        /** Album mode: songs of an album whose loudness is looked up at the same time. */
+        const val ALBUM_LOOKUPS_AT_ONCE = 2
         const val MS_PER_MINUTE = 60_000L
     }
 }

@@ -5,6 +5,8 @@
 
 package com.metrolist.music.utils
 
+import kotlinx.coroutines.withTimeoutOrNull
+import kotlinx.coroutines.delay
 import java.util.concurrent.ConcurrentHashMap
 import kotlinx.coroutines.async
 import kotlinx.coroutines.Deferred
@@ -483,6 +485,47 @@ object YouTubePlaylistEditor {
     ) {
         detailsCache[playlistId.removePrefix("VL")] = CachedDetails(details, System.currentTimeMillis())
     }
+
+    /** How a cover change ended: refused, or accepted with the cover YouTube now shows (null when not yet). */
+    data class CoverChange(val accepted: Boolean, val url: String?)
+
+    /**
+     * Gives the playlist a new cover the same way on every platform: the image, already made small
+     * (at most [COVER_SIDE] pixels, JPEG), is sent once, and Sonara waits for YouTube to show it;
+     * nothing is shown in Sonara before YouTube has it. All of it within
+     * [YouTubeWebSession.COVER_LIMIT_MS]; past that, a cover accepted but not shown yet comes with
+     * the next refresh.
+     */
+    suspend fun replaceCover(
+        playlistId: String,
+        jpeg: ByteArray,
+    ): CoverChange {
+        val bare = playlistId.removePrefix("VL")
+        val deadline = System.currentTimeMillis() + YouTubeWebSession.COVER_LIMIT_MS
+        val before = coverUrl(bare)
+        val accepted = withTimeoutOrNull(YouTubeWebSession.COVER_LIMIT_MS) { YouTubeWebSession.uploadPlaylistCover(bare, jpeg, deadline) } == true
+        if (!accepted) return CoverChange(false, null)
+        while (System.currentTimeMillis() + COVER_CHECK_MS < deadline) {
+            delay(COVER_CHECK_MS)
+            val now = coverUrl(bare)
+            if (now != null && now != before) return CoverChange(true, now)
+        }
+        return CoverChange(true, null)
+    }
+
+    /** The cover YouTube shows for the playlist now, at its largest. */
+    private suspend fun coverUrl(bare: String): String? {
+        val page = YouTubeWebSession.post("browse", JSONObject().put("browseId", "VL$bare")) ?: return null
+        val header = findObject(page, "musicResponsiveHeaderRenderer") ?: return null
+        return header.optJSONObject("thumbnail")?.let { findObject(it, "thumbnail") }
+            ?.optJSONArray("thumbnails")?.let { it.optJSONObject(it.length() - 1)?.optString("url") }
+            ?.takeIf { it.isNotBlank() }
+    }
+
+    /** The largest side of a cover sent to YouTube, in pixels (its own covers are smaller). */
+    const val COVER_SIDE = 1000
+    const val COVER_QUALITY = 85
+    private const val COVER_CHECK_MS = 2_000L
 
     suspend fun details(playlistId: String): PlaylistDetails? {
         val bare = playlistId.removePrefix("VL")

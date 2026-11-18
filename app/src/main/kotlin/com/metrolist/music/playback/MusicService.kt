@@ -7,6 +7,13 @@
 
 package com.metrolist.music.playback
 
+import com.metrolist.music.playback.audio.Gapless
+import com.metrolist.music.models.MediaMetadata
+import kotlin.math.roundToInt
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.async
+import java.util.concurrent.ConcurrentHashMap
+import com.metrolist.music.playback.audio.Loudness
 import com.metrolist.music.constants.AutoRadioQueueKey
 import com.metrolist.music.constants.ROMANIZE_SHOW_LATIN
 import com.metrolist.music.constants.LyricsRomanizeShowKey
@@ -134,7 +141,6 @@ import com.metrolist.music.constants.AutoplayKey
 import com.metrolist.music.constants.CrossfadeDurationKey
 import com.metrolist.music.constants.CrossfadeEnabledKey
 import com.metrolist.music.constants.CrossfadeEnabledDefault
-import com.metrolist.music.constants.CrossfadeGaplessKey
 import com.metrolist.music.constants.DisableLoadMoreWhenRepeatAllKey
 import com.metrolist.music.constants.EnableSongCacheKey
 import com.metrolist.music.constants.HideExplicitKey
@@ -304,7 +310,6 @@ class MusicService :
 
     private var crossfadeEnabled = false
     private var crossfadeDuration = 5000f
-    private var crossfadeGapless = true
     private var crossfadeMessage: PlayerMessage? = null
 
     private val secondaryPlayerListener =
@@ -427,6 +432,13 @@ class MusicService :
     private var cachedNormalizationMediaId: String? = null
     private var cachedNormalizationGainMb: Int? = null
     private var cachedNormalizationEnabled: Boolean = false
+
+    /** Songs' loudness in LUFS, as YouTube measured them: from playback, the database and album lookups. */
+    private val songLufs = ConcurrentHashMap<String, Double>()
+
+    /** Albums whose songs have all been looked up this session (album mode, [Loudness.albumLufs]). */
+    private val albumsLookedUp = ConcurrentHashMap.newKeySet<String>()
+    private var albumLookup: Job? = null
 
     @Volatile private var isScreenOff = false
 
@@ -1011,16 +1023,14 @@ class MusicService :
             }
 
         dataStore.data.map { prefs ->
-            Triple(
+            Pair(
                 prefs[CrossfadeEnabledKey] ?: CrossfadeEnabledDefault,
                 prefs[CrossfadeDurationKey] ?: 5f,
-                prefs[CrossfadeGaplessKey] ?: true,
             )
         }.distinctUntilChanged()
-            .collect(scope) { (enabled, duration, gapless) ->
+            .collect(scope) { (enabled, duration) ->
                 crossfadeEnabled = enabled
                 crossfadeDuration = duration * 1000f // Convert to ms
-                crossfadeGapless = gapless
             }
 
         // Observe and cache common preferences to avoid runBlocking reads in playback callbacks
@@ -1831,6 +1841,9 @@ class MusicService :
                             ),
                         ).getOrNull()
                     } ?: return@launch
+                playbackData.audioConfig?.let { audio ->
+                    Loudness.measuredLufs(audio.loudnessDb, audio.perceptualLoudnessDb)?.let { songLufs[nextId] = it }
+                }
                 songUrlCache.put(
                     mediaId = nextId,
                     url = playbackData.streamUrl,
@@ -2444,9 +2457,16 @@ class MusicService :
         perceptualLoudnessDb: Double?,
         updateCache: Boolean,
     ) {
+        val songLoudness = Loudness.measuredLufs(loudnessDb, perceptualLoudnessDb)
+        songLoudness?.let { songLufs[mediaId] = it }
         val gain =
             if (normalizationEnabledCached) {
-                normalizationGainMb(loudnessDb, perceptualLoudnessDb, loudnessLevelCached.targetLufs)
+                val target = playerNormalizationProcessors.entries.firstOrNull { it.value === processor }?.key
+                normalizationGainMb(
+                    songLufs = songLoudness ?: songLufs[mediaId],
+                    albumLufs = target?.let { albumLufsFor(it, mediaId) },
+                    targetLufs = loudnessLevelCached.targetLufs,
+                )
             } else {
                 null
             }
@@ -2537,6 +2557,7 @@ class MusicService :
                                 updateCache = true,
                             )
                         }
+                        lookUpAlbum()
                     }
                 } else {
                     withContext(Dispatchers.Main) {
@@ -2554,6 +2575,80 @@ class MusicService :
                 playerNormalizationProcessors.values.forEach { it.enabled = false }
             }
         }
+    }
+
+    /** The album the song is played as part of: its songs in a row, in order, not shuffled. */
+    private fun albumRunFor(target: Player, mediaId: String): Pair<String, List<MediaMetadata>>? {
+        if (target.shuffleModeEnabled || target.currentMediaItem?.mediaId != mediaId) return null
+        val queue =
+            object : AbstractList<MediaMetadata?>() {
+                override val size get() = target.mediaItemCount
+
+                override fun get(index: Int) = target.getMediaItemAt(index).metadata
+            }
+        val index = target.currentMediaItemIndex
+        val run = Loudness.albumRun(queue, index) { it?.album?.id } ?: return null
+        val album = queue[index]?.album?.id ?: return null
+        return album to run.mapNotNull { queue[it] }
+    }
+
+    /** The album's loudness when the song plays as part of one and it is known, else null. */
+    private fun albumLufsFor(target: Player, mediaId: String): Double? {
+        val (album, songs) = albumRunFor(target, mediaId) ?: return null
+        return Loudness.albumLufs(
+            songs.map { Loudness.Song(songLufs[it.id], it.duration.toDouble()) },
+            lookedUp = album in albumsLookedUp,
+        )
+    }
+
+    /**
+     * Album mode needs every song's loudness before the album's gain is known, so the album's
+     * songs not measured yet are looked up once (two at a time); the gain then moves smoothly to
+     * the album's.
+     */
+    private fun lookUpAlbum() {
+        if (!normalizationEnabledCached || offlineMode || albumLookup?.isActive == true) return
+        val mediaId = player.currentMediaItem?.mediaId ?: return
+        val (album, songs) = albumRunFor(player, mediaId) ?: return
+        if (album in albumsLookedUp) return
+        albumLookup =
+            scope.launch(SilentHandler) {
+                val missing =
+                    withContext(Dispatchers.IO) {
+                        songs.map { it.id }.filter { id ->
+                            if (songLufs.containsKey(id)) return@filter false
+                            val format = database.format(id).first()
+                            val lufs = Loudness.measuredLufs(format?.loudnessDb, format?.perceptualLoudnessDb)
+                            lufs?.let { songLufs[id] = it }
+                            lufs == null
+                        }
+                    }
+                missing.chunked(ALBUM_LOOKUPS_AT_ONCE).forEach { ids ->
+                    ids.map { id ->
+                        async(Dispatchers.IO) {
+                            val audio =
+                                InnerTubeXPlayer.playerResponseForPlayback(
+                                    id,
+                                    audioQuality = audioQuality,
+                                    connectivityManager = connectivityManager,
+                                ).getOrNull()?.audioConfig
+                            Loudness.measuredLufs(audio?.loudnessDb, audio?.perceptualLoudnessDb)?.let { songLufs[id] = it }
+                        }
+                    }.awaitAll()
+                }
+                albumsLookedUp += album
+                val current = player.currentMediaItem?.mediaId ?: return@launch
+                val format = withContext(Dispatchers.IO) { database.format(current).first() }
+                val processor = playerNormalizationProcessors[player] ?: return@launch
+                if (isCrossfading || player.currentMediaItem?.mediaId != current) return@launch
+                applyAudioNormalization(
+                    processor = processor,
+                    mediaId = current,
+                    loudnessDb = format?.loudnessDb,
+                    perceptualLoudnessDb = format?.perceptualLoudnessDb,
+                    updateCache = true,
+                )
+            }
     }
 
     private fun openAudioEffectSession() {
@@ -4766,7 +4861,8 @@ class MusicService :
         val mediaCrossfadeDuration = crossfadeDuration.toLong()
 
         if (!crossfadeEnabled || crossfadeDuration <= 0f || player.duration == C.TIME_UNSET || player.duration <= mediaCrossfadeDuration) return
-        if (crossfadeGapless && isNextItemGapless()) return
+        // An album played in its order runs gaplessly: never a crossfade inside it (Gapless).
+        if (isNextItemGapless()) return
         if (!player.hasNextMediaItem() && player.repeatMode != REPEAT_MODE_ONE) return
 
         val triggerTime = player.duration - mediaCrossfadeDuration
@@ -4789,11 +4885,12 @@ class MusicService :
     }
 
     private fun isNextItemGapless(): Boolean {
-        val current = player.currentMediaItem?.mediaMetadata ?: return false
+        val current = player.currentMediaItem ?: return false
         val nextIndex = player.nextMediaItemIndex
         if (nextIndex == C.INDEX_UNSET) return false
-        val next = player.getMediaItemAt(nextIndex).mediaMetadata
-        return current.albumTitle != null && current.albumTitle == next.albumTitle
+        val next = player.getMediaItemAt(nextIndex)
+        fun album(item: MediaItem) = item.metadata?.album?.id ?: item.mediaMetadata.albumTitle?.toString()
+        return Gapless.albumContinues(album(current), album(next), player.shuffleModeEnabled)
     }
 
     private fun startCrossfade() {
@@ -4978,6 +5075,9 @@ class MusicService :
         /** Songs, back from the current one, a radio may be started from when the queue ends. */
         private const val RADIO_SEEDS = 4
 
+        /** Album mode: songs of an album whose loudness is looked up at the same time. */
+        private const val ALBUM_LOOKUPS_AT_ONCE = 2
+
         const val ROOT = "root"
         const val SONG = "song"
         const val ARTIST = "artist"
@@ -5014,13 +5114,11 @@ class MusicService :
     }
 }
 
+/** The gain in millibels ([Loudness], shared with the desktop): the album's in album mode, else the song's. */
 internal fun normalizationGainMb(
-    loudnessDb: Double?,
-    perceptualLoudnessDb: Double?,
+    songLufs: Double?,
+    albumLufs: Double?,
     targetLufs: Float,
-): Int? {
-    val measuredLufs = perceptualLoudnessDb ?: loudnessDb?.let { it + LoudnessLevel.AGGRESSIVE.targetLufs }
-    return measuredLufs
-        ?.let { (-(it - targetLufs) * 100.0).toInt() }
-        ?.coerceIn(-1500, 300)
-}
+): Int? = Loudness.gainDb(songLufs, albumLufs, targetLufs.toDouble())?.let { (it * MILLIBELS_PER_DB).roundToInt() }
+
+private const val MILLIBELS_PER_DB = 100
