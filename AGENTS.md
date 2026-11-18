@@ -151,6 +151,13 @@ in `docs/perf.md`; never write numbers that were not measured.
   first (at most 1000 px, JPEG 85), sent once, all within 60 s (`COVER_LIMIT_MS`), with no
   second attempt; Sonara never shows a cover YouTube doesn't show yet: it waits for YouTube's own
   cover URL, and an accepted cover not shown within the minute comes with the next refresh.
+  YouTube allows an own cover only on a phone-verified account: the upload still succeeds but the
+  apply answers HTTP 403, which every platform reports as "verify your phone number at
+  youtube.com/verify" (`CoverUpload.NEEDS_VERIFIED_PHONE`), not as a refused image.
+- Toasts are never hidden behind a sheet or dialog: the phone's `ErToastHost` opens each message
+  in a small window of its own (not focusable, not touchable), added after whatever is open; the
+  desktop draws its toast last, in a `Popup`. Lists that may hold a song twice (the desktop's queue
+  and song lists) key rows by place, never by the song's id alone.
 - Updates are looked up at launch and every 6 hours while the app runs (desktop: in the tray
   too); "Install unknown apps" allowed in Android's settings carries on with the install. On
   Windows the installer is handed to `cmd /c start` and the app quits 2.5 s later: the MSI's first

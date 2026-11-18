@@ -61,6 +61,7 @@ suspend fun savePlaylistEdits(
         }
         var thumbnail = playlist.thumbnailUrl
         var coverPending = false
+        var needsVerifiedPhone = false
         val coverOk = when {
             removeCover -> YouTubePlaylistEditor.removeCover(browseId).also { if (it) thumbnail = null }
             newCover != null -> {
@@ -70,6 +71,7 @@ suspend fun savePlaylistEdits(
                 if (change?.accepted == true) {
                     change.url?.let { thumbnail = it } ?: run { coverPending = true }
                 } else {
+                    needsVerifiedPhone = change?.needsVerifiedPhone == true
                     Timber.tag("SonaraWeb").w("cover not accepted by YouTube (${jpeg?.size} bytes)")
                 }
                 change?.accepted == true
@@ -84,6 +86,7 @@ suspend fun savePlaylistEdits(
         }
         YouTubePlaylistEditor.rememberDetails(browseId, PlaylistDetails(description, privacy, customCover))
         when {
+            !coverOk && needsVerifiedPhone -> SaveResult.COVER_NEEDS_VERIFIED_PHONE
             !coverOk -> SaveResult.COVER_FAILED
             coverPending -> SaveResult.COVER_PENDING
             else -> SaveResult.SAVED
@@ -98,6 +101,7 @@ suspend fun savePlaylistEdits(
             when (result) {
                 SaveResult.SAVED -> R.string.er_playlist_saved
                 SaveResult.COVER_PENDING -> R.string.er_playlist_cover_pending
+                SaveResult.COVER_NEEDS_VERIFIED_PHONE -> R.string.er_playlist_cover_verify_phone
                 SaveResult.COVER_FAILED -> R.string.er_playlist_cover_failed
                 SaveResult.FAILED -> R.string.er_playlist_save_failed
             },
@@ -106,7 +110,7 @@ suspend fun savePlaylistEdits(
     return result == SaveResult.SAVED || result == SaveResult.COVER_PENDING
 }
 
-private enum class SaveResult { SAVED, COVER_PENDING, COVER_FAILED, FAILED }
+private enum class SaveResult { SAVED, COVER_PENDING, COVER_NEEDS_VERIFIED_PHONE, COVER_FAILED, FAILED }
 
 /**
  * The chosen cover made small before it is sent: at most [YouTubePlaylistEditor.COVER_SIDE]

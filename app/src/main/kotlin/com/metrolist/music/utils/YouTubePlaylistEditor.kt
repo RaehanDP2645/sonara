@@ -5,6 +5,7 @@
 
 package com.metrolist.music.utils
 
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.coroutines.delay
 import java.util.concurrent.ConcurrentHashMap
@@ -487,7 +488,16 @@ object YouTubePlaylistEditor {
     }
 
     /** How a cover change ended: refused, or accepted with the cover YouTube now shows (null when not yet). */
-    data class CoverChange(val accepted: Boolean, val url: String?)
+    data class CoverChange(
+        val accepted: Boolean,
+        val url: String?,
+        /** Refused because the account's phone number isn't verified with YouTube. */
+        val needsVerifiedPhone: Boolean = false,
+    )
+
+    /** What the desktop says when [CoverChange.needsVerifiedPhone] (the phone has it as a string). */
+    const val VERIFY_PHONE_FOR_COVER = "YouTube allows your own cover only after you verify your phone number at youtube.com/verify."
+
 
     /**
      * Gives the playlist a new cover the same way on every platform: the image, already made small
@@ -499,18 +509,23 @@ object YouTubePlaylistEditor {
     suspend fun replaceCover(
         playlistId: String,
         jpeg: ByteArray,
-    ): CoverChange {
+    ): CoverChange = coroutineScope {
         val bare = playlistId.removePrefix("VL")
         val deadline = System.currentTimeMillis() + YouTubeWebSession.COVER_LIMIT_MS
-        val before = coverUrl(bare)
-        val accepted = withTimeoutOrNull(YouTubeWebSession.COVER_LIMIT_MS) { YouTubeWebSession.uploadPlaylistCover(bare, jpeg, deadline) } == true
-        if (!accepted) return CoverChange(false, null)
+        // Read alongside the upload: a slow answer here used to take a quarter of the minute.
+        val before = async { withTimeoutOrNull(COVER_CHECK_LIMIT_MS) { coverUrl(bare) } }
+        val sent = withTimeoutOrNull(YouTubeWebSession.COVER_LIMIT_MS) { YouTubeWebSession.uploadPlaylistCover(bare, jpeg, deadline) }
+        if (sent != YouTubeWebSession.CoverUpload.ACCEPTED) {
+            before.cancel()
+            return@coroutineScope CoverChange(false, null, needsVerifiedPhone = sent == YouTubeWebSession.CoverUpload.NEEDS_VERIFIED_PHONE)
+        }
+        val old = before.await()
         while (System.currentTimeMillis() + COVER_CHECK_MS < deadline) {
             delay(COVER_CHECK_MS)
-            val now = coverUrl(bare)
-            if (now != null && now != before) return CoverChange(true, now)
+            val now = withTimeoutOrNull(COVER_CHECK_LIMIT_MS) { coverUrl(bare) }
+            if (now != null && now != old) return@coroutineScope CoverChange(true, now)
         }
-        return CoverChange(true, null)
+        CoverChange(true, null)
     }
 
     /** The cover YouTube shows for the playlist now, at its largest. */
@@ -526,6 +541,7 @@ object YouTubePlaylistEditor {
     const val COVER_SIDE = 1000
     const val COVER_QUALITY = 85
     private const val COVER_CHECK_MS = 2_000L
+    private const val COVER_CHECK_LIMIT_MS = 8_000L
 
     suspend fun details(playlistId: String): PlaylistDetails? {
         val bare = playlistId.removePrefix("VL")

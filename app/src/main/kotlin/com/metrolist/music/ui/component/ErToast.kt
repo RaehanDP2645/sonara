@@ -5,6 +5,18 @@
 
 package com.metrolist.music.ui.component
 
+import androidx.compose.ui.window.DialogWindowProvider
+import androidx.compose.ui.window.DialogProperties
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.runtime.SideEffect
+import androidx.compose.animation.core.MutableTransitionState
+import android.view.WindowManager
+import android.view.Gravity
+import android.graphics.drawable.ColorDrawable
+import android.graphics.Color as AndroidColor
 import android.content.Context
 import android.widget.Toast
 import androidx.annotation.StringRes
@@ -59,10 +71,17 @@ object ErToast {
     fun show(context: Context, @StringRes text: Int) = show(context, context.getString(text))
 }
 
+/**
+ * Shows [ErToast] messages [bottom] above the screen's lower edge. Each message opens a small
+ * window of its own: sheets and dialogs are windows over the app's, and a message drawn in the app
+ * itself was hidden behind them (a refused cover, said while the editor was still open). A window
+ * opened with the message lies above whatever is open; it takes no touches and no focus.
+ */
 @Composable
-fun ErToastHost(modifier: Modifier = Modifier) {
+fun ErToastHost(bottom: Dp) {
     var message by remember { mutableStateOf<String?>(null) }
-    var visible by remember { mutableStateOf(false) }
+    val shown = remember { MutableTransitionState(false) }
+    val bottomPx = with(LocalDensity.current) { bottom.roundToPx() }
     val lifecycleOwner = LocalLifecycleOwner.current
     DisposableEffect(lifecycleOwner) {
         val observer = LifecycleEventObserver { _, event ->
@@ -82,16 +101,51 @@ fun ErToastHost(modifier: Modifier = Modifier) {
     LaunchedEffect(Unit) {
         ErToast.messages.collectLatest {
             message = it
-            visible = true
+            shown.targetState = true
             delay(TOAST_MS)
-            visible = false
+            shown.targetState = false
         }
     }
+    if (!shown.currentState && !shown.targetState) return
+    Dialog(
+        onDismissRequest = {},
+        properties =
+            DialogProperties(
+                dismissOnBackPress = false,
+                dismissOnClickOutside = false,
+                usePlatformDefaultWidth = false,
+                decorFitsSystemWindows = false,
+            ),
+    ) {
+        val window = (LocalView.current.parent as? DialogWindowProvider)?.window
+        SideEffect {
+            window?.run {
+                addFlags(
+                    WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
+                        WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE or
+                        WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL,
+                )
+                clearFlags(WindowManager.LayoutParams.FLAG_DIM_BEHIND)
+                setBackgroundDrawable(ColorDrawable(AndroidColor.TRANSPARENT))
+                setWindowAnimations(0)
+                setLayout(WindowManager.LayoutParams.WRAP_CONTENT, WindowManager.LayoutParams.WRAP_CONTENT)
+                setGravity(Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL)
+                attributes = attributes.apply { y = bottomPx }
+            }
+        }
+        ToastBubble(shown, message.orEmpty())
+    }
+}
+
+@Composable
+private fun ToastBubble(
+    shown: MutableTransitionState<Boolean>,
+    message: String,
+) {
     AnimatedVisibility(
-        visible = visible,
+        visibleState = shown,
         enter = fadeIn(Motion.medium()) + slideInVertically(Motion.medium()) { it / 2 },
         exit = fadeOut(Motion.fast()) + slideOutVertically(Motion.fast()) { it / 2 },
-        modifier = modifier,
     ) {
         Surface(
             shape = ErShape.Pill,
@@ -101,7 +155,7 @@ fun ErToastHost(modifier: Modifier = Modifier) {
             modifier = Modifier.widthIn(max = 360.dp),
         ) {
             Text(
-                text = message.orEmpty(),
+                text = message,
                 style = MaterialTheme.typography.bodyMedium,
                 textAlign = TextAlign.Center,
                 modifier = Modifier.padding(horizontal = Spacing.L, vertical = Spacing.M),

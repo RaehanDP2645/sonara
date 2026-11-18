@@ -5,6 +5,10 @@
 
 package com.ermusic.desktop
 
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.window.PopupProperties
+import androidx.compose.ui.window.Popup
 import com.ermusic.desktop.data.Backup
 import com.ermusic.desktop.window.Uninstall
 import androidx.compose.ui.window.LocalWindowExceptionHandlerFactory
@@ -574,24 +578,27 @@ private fun App(app: AppState) {
                 focusManager.clearFocus()
             })
         }
-        app.toast?.let { message ->
-            Text(
-                message,
-                style = MaterialTheme.typography.labelLarge,
-                color = MaterialTheme.colorScheme.onPrimary,
-                modifier =
-                    Modifier
-                        .align(Alignment.BottomCenter)
-                        .padding(bottom = Size.PlayerBar + Spacing.L)
-                        .clip(ErShape.Pill)
-                        .background(MaterialTheme.colorScheme.primary)
-                        .padding(horizontal = Spacing.L, vertical = Spacing.S),
-            )
-        }
         AnimatedVisibility(app.fullscreen && state.current != null, enter = fadeIn(), exit = fadeOut(), modifier = Modifier.fillMaxSize()) {
             ImmersivePlayer(app, state)
         }
         AppDialogs(app)
+        // Last, in a layer of its own: a message said while a dialog is open (a refused cover)
+        // shows above the dialog instead of behind it.
+        app.toast?.let { message ->
+            val lift = with(LocalDensity.current) { (Size.PlayerBar + Spacing.L).roundToPx() }
+            Popup(alignment = Alignment.BottomCenter, offset = IntOffset(0, -lift), properties = PopupProperties(focusable = false)) {
+                Text(
+                    message,
+                    style = MaterialTheme.typography.labelLarge,
+                    color = MaterialTheme.colorScheme.onPrimary,
+                    modifier =
+                        Modifier
+                            .clip(ErShape.Pill)
+                            .background(MaterialTheme.colorScheme.primary)
+                            .padding(horizontal = Spacing.L, vertical = Spacing.S),
+                )
+            }
+        }
     }
 }
 

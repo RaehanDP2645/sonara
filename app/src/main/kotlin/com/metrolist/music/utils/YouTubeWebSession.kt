@@ -184,7 +184,7 @@ object YouTubeWebSession {
         playlistId: String,
         image: ByteArray,
         deadlineMs: Long = System.currentTimeMillis() + COVER_LIMIT_MS,
-    ): Boolean = withContext(Dispatchers.IO) {
+    ): CoverUpload = withContext(Dispatchers.IO) {
         // The image is sent once; every call has only what is left of the time allowed.
         fun http(): OkHttpClient? {
             val left = deadlineMs - System.currentTimeMillis()
@@ -210,9 +210,9 @@ object YouTubeWebSession {
                     .header("X-YouTube-Client-Name", "67")
                     .header("X-YouTube-Client-Version", version)
                     .post(ByteArray(0).toRequestBody()),
-            )?.build() ?: return@withContext false
+            )?.build() ?: return@withContext CoverUpload.REFUSED
             val session = runCatching {
-                (http() ?: return@withContext false).newCall(start).execute().use { r ->
+                (http() ?: return@withContext CoverUpload.REFUSED).newCall(start).execute().use { r ->
                     val url = r.header("X-Goog-Upload-URL")
                     val id = r.header("X-Goog-Upload-Id") ?: r.header("X-Guploader-Uploadid")
                     Timber.tag(TAG).d("cover start $base: HTTP ${r.code} url=${url != null} id=${id != null} ${if (!r.isSuccessful) r.body.string().take(200) else ""}")
@@ -225,14 +225,14 @@ object YouTubeWebSession {
                     .header("X-Goog-Upload-Command", "upload, finalize")
                     .header("X-Goog-Upload-Offset", "0")
                     .post(image.toRequestBody("image/jpeg".toMediaType())),
-            )?.build() ?: return@withContext false
+            )?.build() ?: return@withContext CoverUpload.REFUSED
             val blob = runCatching {
-                (http() ?: return@withContext false).newCall(upload).execute().use { r ->
+                (http() ?: return@withContext CoverUpload.REFUSED).newCall(upload).execute().use { r ->
                     val text = r.body.string()
                     Timber.tag(TAG).d("cover upload: HTTP ${r.code} ${text.take(200)}")
                     if (!r.isSuccessful) null else JSONObject(text).optString("encryptedBlobId").takeIf { it.isNotBlank() }
                 }
-            }.onFailure { Timber.tag(TAG).w(it, "cover upload failed") }.getOrNull() ?: return@withContext false
+            }.onFailure { Timber.tag(TAG).w(it, "cover upload failed") }.getOrNull() ?: return@withContext CoverUpload.REFUSED
 
             // The apply format isn't documented; try the shapes seen in YouTube's own clients in order.
             val keyed = JSONObject()
@@ -245,20 +245,28 @@ object YouTubeWebSession {
                 Triple("plain", plain, bareId),
                 Triple("keyed+VL", keyed, "VL$bareId"),
             )) {
-                if (System.currentTimeMillis() >= deadlineMs) return@withContext false
+                if (System.currentTimeMillis() >= deadlineMs) return@withContext CoverUpload.REFUSED
                 val action = JSONObject().put("action", "ACTION_SET_CUSTOM_THUMBNAIL").put("addedCustomThumbnail", thumb)
-                val applied = post(
+                val (code, applied) = postWithStatus(
                     "browse/edit_playlist",
                     JSONObject().put("playlistId", id).put("actions", JSONArray().put(action)),
                     WebRemix.copy(version = version),
                 )
-                Timber.tag(TAG).d("cover apply ($label): status=${applied?.optString("status")}")
-                if (applied?.optString("status") == "STATUS_SUCCEEDED") return@withContext true
+                Timber.tag(TAG).d("cover apply ($label): HTTP $code status=${applied?.optString("status")}")
+                if (applied?.optString("status") == "STATUS_SUCCEEDED") return@withContext CoverUpload.ACCEPTED
+                // YouTube allows an own cover only on an account with a verified phone number, and
+                // answers 403 to the others (YouTube Music says "verify your phone number").
+                if (code == HTTP_FORBIDDEN) return@withContext CoverUpload.NEEDS_VERIFIED_PHONE
             }
-            return@withContext false
+            return@withContext CoverUpload.REFUSED
         }
-        false
+        CoverUpload.REFUSED
     }
+
+    /** How a cover upload ended. */
+    enum class CoverUpload { ACCEPTED, NEEDS_VERIFIED_PHONE, REFUSED }
+
+    private const val HTTP_FORBIDDEN = 403
 
     /** A cover change, sent and shown by YouTube, has this long; it is never sent twice. */
     const val COVER_LIMIT_MS = 60_000L

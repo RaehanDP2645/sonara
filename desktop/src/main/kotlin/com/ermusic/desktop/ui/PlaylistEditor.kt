@@ -128,20 +128,19 @@ fun EditPlaylistDialog(playlist: PlaylistItem, app: AppState) {
         }
     }
 
-    /** [call] answers the message to show once YouTube took the change, or null when it refused it. */
-    fun coverAction(failure: String, call: suspend () -> String?) {
+    /** [call] answers what to say: the message once YouTube took the change, or why it refused it. */
+    fun coverAction(call: suspend () -> Result<String>) {
         busy = true
         problem = null
         scope.launch {
-            val done = withContext(Dispatchers.IO) { call() }
+            val answer = withContext(Dispatchers.IO) { call() }
             busy = false
-            if (done != null) {
-                app.playlistChanged()
-                details = withContext(Dispatchers.IO) { YouTubePlaylistEditor.details(playlist.id) } ?: details
-                app.showToast(done)
-            } else {
-                problem = failure
-            }
+            answer
+                .onSuccess { done ->
+                    app.playlistChanged()
+                    details = withContext(Dispatchers.IO) { YouTubePlaylistEditor.details(playlist.id) } ?: details
+                    app.showToast(done)
+                }.onFailure { problem = it.message }
         }
     }
 
@@ -158,12 +157,13 @@ fun EditPlaylistDialog(playlist: PlaylistItem, app: AppState) {
                         OutlinedButton(enabled = !busy, modifier = Modifier.handCursor(), onClick = {
                             val bytes = pickImage()?.let(::coverBytes)
                             if (bytes != null) {
-                                coverAction("YouTube didn't accept that image.") {
+                                coverAction {
                                     val change = YouTubePlaylistEditor.replaceCover(playlist.id, bytes)
                                     when {
-                                        !change.accepted -> null
-                                        change.url == null -> "YouTube has the new cover and shows it once it's ready"
-                                        else -> "Cover updated"
+                                        change.needsVerifiedPhone -> Result.failure(IllegalStateException(YouTubePlaylistEditor.VERIFY_PHONE_FOR_COVER))
+                                        !change.accepted -> Result.failure(IllegalStateException("YouTube didn't accept that image."))
+                                        change.url == null -> Result.success("YouTube has the new cover and shows it once it's ready")
+                                        else -> Result.success("Cover updated")
                                     }
                                 }
                             }
@@ -173,7 +173,13 @@ fun EditPlaylistDialog(playlist: PlaylistItem, app: AppState) {
                             Text("Change cover")
                         }
                         if (details?.customCover == true) {
-                            TextButton(enabled = !busy, modifier = Modifier.handCursor(), onClick = { coverAction("Couldn't remove the cover.") { "Cover removed".takeIf { YouTubePlaylistEditor.removeCover(playlist.id) } } }) { Text("Remove cover") }
+                            TextButton(enabled = !busy, modifier = Modifier.handCursor(), onClick = { coverAction {
+                                if (YouTubePlaylistEditor.removeCover(playlist.id)) {
+                                    Result.success("Cover removed")
+                                } else {
+                                    Result.failure(IllegalStateException("Couldn't remove the cover."))
+                                }
+                            } }) { Text("Remove cover") }
                         }
                     }
                 }

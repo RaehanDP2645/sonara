@@ -608,7 +608,7 @@ private fun TrackList(tracks: List<Track>, app: AppState, emptyText: String) {
         return
     }
     ScrollingColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(end = Spacing.S, bottom = Spacing.XXL)) {
-        itemsIndexed(tracks.toList(), key = { _, track -> track.id }, contentType = { _, _ -> "track" }) { index, track ->
+        itemsIndexed(tracks.toList(), key = { index, track -> "$index:${track.id}" }, contentType = { _, _ -> "track" }) { index, track ->
             Row(
                 verticalAlignment = Alignment.CenterVertically,
                 modifier =

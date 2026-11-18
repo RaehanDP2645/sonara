@@ -1210,10 +1210,9 @@ class MainActivity : FragmentActivity() {
                     )
 
                     ErToastHost(
-                        modifier = Modifier
-                            .align(Alignment.BottomCenter)
-                            .windowInsetsPadding(playerAwareWindowInsets.only(WindowInsetsSides.Bottom))
-                            .padding(bottom = com.metrolist.music.ui.theme.Spacing.M),
+                        bottom =
+                            with(LocalDensity.current) { playerAwareWindowInsets.getBottom(this).toDp() } +
+                                com.metrolist.music.ui.theme.Spacing.M,
                     )
 
                     // Built-in updater: a newer release found at launch or from About; a required one stays open.

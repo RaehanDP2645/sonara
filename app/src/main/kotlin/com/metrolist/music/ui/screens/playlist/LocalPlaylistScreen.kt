@@ -1094,7 +1094,13 @@ fun LocalPlaylistHeader(
                         }
                     } else {
                         snackbarHostState.showSnackbar(
-                            context.getString(if (change?.accepted == true) R.string.er_playlist_cover_pending else R.string.er_playlist_cover_failed),
+                            context.getString(
+                                when {
+                                    change?.accepted == true -> R.string.er_playlist_cover_pending
+                                    change?.needsVerifiedPhone == true -> R.string.er_playlist_cover_verify_phone
+                                    else -> R.string.er_playlist_cover_failed
+                                },
+                            ),
                         )
                     }
                 }

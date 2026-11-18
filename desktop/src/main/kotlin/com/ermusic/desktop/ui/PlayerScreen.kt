@@ -326,16 +326,20 @@ fun QueuePanel(app: AppState, state: PlayerState) {
                 app.sidePanelDismissed = true
             }
         }
-        val reorder = rememberReorder<Track>(list) { it.id }
-        val queue = reorder.shown(state.queue)
-        // Where a song is in the player's queue, which is not where it is shown while one is dragged.
-        fun at(track: Track) = state.queue.indexOfFirst { it.id == track.id }
+        // A queue may hold the same song more than once: each row has a key of its own (the song
+        // and which time it comes), and rows are found by that key, never by the song's id.
+        val rows = remember(state.queue) { QueueRow.of(state.queue) }
+        val reorder = rememberReorder<QueueRow>(list) { it.key }
+        val shown = reorder.shown(rows)
+        // Where a row is in the player's queue, which is not where it is shown while one is dragged.
+        fun at(row: QueueRow) = rows.indexOfFirst { it.key == row.key }
         val onMoved = { moved: Moved -> player.move(moved.from, moved.to) }
         ScrollingColumn(Modifier.fillMaxSize(), state = list) {
-            itemsIndexed(queue, key = { _, track -> track.id }, contentType = { _, _ -> "track" }) { _, track ->
+            itemsIndexed(shown, key = { _, row -> row.key }, contentType = { _, _ -> "track" }) { _, row ->
+                val track = row.track
                 var menuAt by remember { mutableStateOf<IntOffset?>(null) }
-                val current = track.id == state.current?.id
-                Box(Modifier.animateItem(placementSpec = reorder.placement(track.id)).reorderRow(reorder, track.id, state.queue)) {
+                val current = at(row) == state.index
+                Box(Modifier.animateItem(placementSpec = reorder.placement(row.key)).reorderRow(reorder, row.key, rows)) {
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
                         modifier =
@@ -345,8 +349,8 @@ fun QueuePanel(app: AppState, state: PlayerState) {
                                 .height(Size.ListRow)
                                 .clip(ErShape.Small)
                                 .background(if (current) colors.primaryContainer else Color.Transparent)
-                                .dragToReorder(reorder, track.id, state.queue, mouseOnly = true, onMoved = onMoved)
-                                .clickable { player.jumpTo(at(track)) }
+                                .dragToReorder(reorder, row.key, rows, mouseOnly = true, onMoved = onMoved)
+                                .clickable { player.jumpTo(at(row)) }
                                 .handCursor()
                                 .onRightClick { menuAt = it }
                                 .padding(horizontal = Spacing.S),
@@ -355,7 +359,7 @@ fun QueuePanel(app: AppState, state: PlayerState) {
                             icon("drag_handle"),
                             "Drag to reorder",
                             tint = colors.onSurfaceVariant,
-                            modifier = Modifier.size(Size.IconSmall).dragToReorder(reorder, track.id, state.queue, mouseOnly = false, onMoved = onMoved),
+                            modifier = Modifier.size(Size.IconSmall).dragToReorder(reorder, row.key, rows, mouseOnly = false, onMoved = onMoved),
                         )
                         Spacer(Modifier.width(Spacing.S))
                         Art(track.artUrl, Modifier.size(Size.ListThumb), pixels = 120)
@@ -364,15 +368,28 @@ fun QueuePanel(app: AppState, state: PlayerState) {
                             Text(track.title, style = MaterialTheme.typography.titleSmall, color = if (current) colors.primary else colors.onSurface, maxLines = 1, overflow = TextOverflow.Ellipsis)
                             CreditsText(track.allCredits, app, MaterialTheme.typography.bodySmall, colors.onSurfaceVariant)
                         }
-                        if (!current) SymbolButton("close", "Remove from queue", tint = colors.onSurfaceVariant, iconSize = Size.IconSmall) { player.removeAt(at(track)) }
+                        if (!current) SymbolButton("close", "Remove from queue", tint = colors.onSurfaceVariant, iconSize = Size.IconSmall) { player.removeAt(at(row)) }
                     }
                     TrackMenu(track, app, menuAt, extra = { close ->
-                        val index = at(track)
+                        val index = at(row)
                         if (index > 0) AppMenuItem("Move up", "arrow_upward") { player.move(index, index - 1); close() }
                         if (index in 0 until state.queue.lastIndex) AppMenuItem("Move down", "arrow_downward") { player.move(index, index + 1); close() }
                         if (!current) AppMenuItem("Remove from queue", "close") { player.removeAt(index); close() }
                     }) { menuAt = null }
                 }
+            }
+        }
+    }
+}
+
+/** One row of the queue: the song, keyed by its id and which time it comes in the queue. */
+private class QueueRow(val track: Track, val key: String) {
+    companion object {
+        fun of(queue: List<Track>): List<QueueRow> {
+            val seen = HashMap<String, Int>()
+            return queue.map { track ->
+                val time = seen.merge(track.id, 1, Int::plus)!!
+                QueueRow(track, "${track.id}#$time")
             }
         }
     }
