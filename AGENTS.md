@@ -133,7 +133,7 @@ in `docs/perf.md`; never write numbers that were not measured.
 - Volume normalization is one piece of code for every platform (`playback/audio/Loudness.kt`,
   compiled by the desktop as it is): YouTube's `loudnessDb` is relative to -14 LUFS (measured:
   `perceptualLoudnessDb` = `loudnessDb` - 14), songs go to the chosen Loudness level (Balanced
-  -14 LUFS by default; the desktop has the same setting), down by up to 15 dB and up by up to 6 dB,
+  -14 LUFS by default; the desktop always uses Balanced, with no setting), down by up to 15 dB and up by up to 6 dB,
   through `Loudness.Limiter` (stereo-linked, -1 dBFS while raising) instead of clipping. Album
   mode: songs of one album in a row, not shuffled, share the album's gain (length-weighted energy
   mean); the album's unmeasured songs are looked up once, two at a time, through the playback

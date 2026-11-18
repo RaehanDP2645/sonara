@@ -61,9 +61,6 @@ object Settings {
     val romanizeShow = Pref("romanize_show", "both") { it }
     val translateLanguage = Pref("translate_language", "en") { it }
     val normalize = Pref("normalize", true, String::toBoolean)
-
-    /** The level songs are brought to: a [com.metrolist.music.playback.audio.Loudness.Level] name, as on the phone. */
-    val loudnessLevel = Pref("loudness_level", "BALANCED") { it }
     val highQuality = Pref("high_quality", true, String::toBoolean)
     val closeToTray = Pref("close_to_tray", false, String::toBoolean)
     val volume = Pref("volume", 1f, String::toFloat)

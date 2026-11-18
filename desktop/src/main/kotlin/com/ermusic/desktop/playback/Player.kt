@@ -477,7 +477,8 @@ class Player(private val scope: CoroutineScope) {
     /** The linear gain for the song: the album's in album mode, else its own; 1 when off or unknown. */
     private fun normalizeGain(id: String): Double {
         if (!Settings.normalize.value) return 1.0
-        val target = runCatching { Loudness.Level.valueOf(Settings.loudnessLevel.value) }.getOrDefault(Loudness.Level.BALANCED).lufs
+        // Balanced, -14 LUFS: the phone's default level, as on YouTube and Spotify.
+        val target = Loudness.REFERENCE_LUFS
         val album =
             albumRun(mutableState.value, id)?.let { (album, songs) ->
                 Loudness.albumLufs(songs.map { Loudness.Song(songLufs[it.id], it.durationMs / MS_PER_SECOND.toDouble()) }, album in albumsLookedUp)

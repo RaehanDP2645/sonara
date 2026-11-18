@@ -5,7 +5,6 @@
 
 package com.ermusic.desktop.ui
 
-import com.metrolist.music.playback.audio.Loudness
 import kotlinx.coroutines.launch
 import kotlin.system.exitProcess
 import com.ermusic.desktop.window.Uninstall
@@ -134,9 +133,6 @@ fun SettingsScreen(app: AppState) {
                 Group("Playback") {
                     SwitchRow("High quality audio", null, Settings.highQuality)
                     SwitchRow("Normalize volume", null, Settings.normalize)
-                    if (Settings.normalize.value) {
-                        ChoiceRow("Loudness level", null, Loudness.Level.entries.map { it.name to it.label }, Settings.loudnessLevel.value) { Settings.loudnessLevel.value = it }
-                    }
                     SwitchRow("Mono audio", null, Settings.mono)
                     SwitchRow("Autoplay", "Similar songs when the queue ends", Settings.autoplay)
                     val seconds = Settings.crossfadeSeconds.value
